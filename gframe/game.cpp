@@ -2068,7 +2068,7 @@ bool Game::MainLoop() {
 			OnResize();
 		}
 #ifdef YGOPRO_BUILD_DLL
-		if(coreJustLoaded) {
+		if(coreJustLoaded && false) {
 			if(stMessage->getText() == gDataManager->GetSysString(1430))
 				HideElement(wMessage);
 			RefreshUICoreVersion();
