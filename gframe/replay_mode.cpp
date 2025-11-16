@@ -167,8 +167,9 @@ void ReplayMode::EndDuel() {
 		mainGame->stMessage->setText(gDataManager->GetSysString(1501).data());
 		if(mainGame->wCardSelect->isVisible())
 			mainGame->HideElement(mainGame->wCardSelect);
-		mainGame->PopupElement(mainGame->wMessage);
-		mainGame->actionSignal.Wait(lock);
+		// mainGame->PopupElement(mainGame->wMessage);
+		// mainGame->actionSignal.Wait(lock);
+		mainGame->WaitFrameSignal(60, lock);
 		mainGame->dInfo.isInDuel = false;
 		mainGame->dInfo.isStarted = false;
 		mainGame->dInfo.isReplay = false;
