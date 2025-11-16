@@ -58,12 +58,12 @@ private:
 			if(cur < 0x800u)
 				return 2;
 			if constexpr(!isUtf16) {
-				if(cur < 0x10000u && (cur < 0xd800u || cur > 0xdfffu))
-					return 3;
-				return 4;
-			} else {
-				return 3;
+				if(cur >= 0x10000u)
+					return 4;
 			}
+			if(cur < 0xd800u || cur > 0xdfffu)
+				return 3;
+			return 4;
 		};
 		while(!source.empty()) {
 			auto first_codepoint = static_cast<char32_t>(*source.begin());
@@ -207,7 +207,7 @@ public:
 				}
 			}
 			*out = 0;
-			return static_cast<int>(out - pstr);
+			return static_cast<int>(out - pstr) + 1;
 		}
 	}
 	// UTF-16/UTF-32 to UTF-16
@@ -234,7 +234,7 @@ public:
 				}
 			}
 			*out = 0;
-			return static_cast<int>(out - pstr);
+			return static_cast<int>(out - pstr) + 1;
 		}
 	}
 	static uint32_t GetVal(const wchar_t* pstr) {

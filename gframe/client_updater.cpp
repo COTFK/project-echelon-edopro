@@ -89,7 +89,7 @@ static CURLcode curlPerform(const char* url, void* payload, void* payload2 = nul
 	curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, ygo::Utils::GetUserAgent().data());
 	curl_easy_setopt(curl_handle, CURLOPT_NOPROXY, "*");
 	curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
-#if (LIBCURL_VERSION_NUM >= 0x073200)
+#if (LIBCURL_VERSION_NUM >= CURL_VERSION_BITS(7,32,0))
 	if(curl_easy_setopt(curl_handle, CURLOPT_XFERINFOFUNCTION, progress_callback<curl_off_t>) == CURLE_OK) {
 		curl_easy_setopt(curl_handle, CURLOPT_XFERINFODATA, payload2);
 	} else
@@ -161,12 +161,17 @@ void ClientUpdater::Unzip(void* payload, unzip_callback callback) {
 	uzpl.tot = static_cast<int>(update_urls.size());
 	cbpayload.payload = &uzpl;
 	int i = 1;
-	for(auto& file : update_urls) {
+	for(const auto& file : update_urls) {
 		uzpl.cur = i++;
 		auto name = epro::format(UPDATES_FOLDER, ygo::Utils::ToPathString(file.name));
 		uzpl.filename = name.data();
 		ygo::Utils::UnzipArchive(name, callback, &cbpayload);
 	}
+#if EDOPRO_WINDOWS
+	if(!Utils::FileExists(corepath)) {
+		Utils::FileMove(epro::format(EPRO_TEXT("{}.old"), corepath), corepath);
+	}
+#endif
 	Utils::Reboot();
 }
 

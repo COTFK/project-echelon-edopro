@@ -5,6 +5,7 @@
 #include "core_utils.h"
 #include "sound_manager.h"
 #include "fmt.h"
+#include "localtime.h"
 #include "CGUIFileSelectListBox/CGUIFileSelectListBox.h"
 #include <IrrlichtDevice.h>
 #include <IGUIWindow.h>
@@ -110,7 +111,7 @@ restart:
 		replay_header.base.flag |= REPLAY_SINGLE_MODE;
 		if(hand_test)
 			replay_header.base.flag |= REPLAY_HAND_TEST;
-		last_replay.BeginRecord(true, EPRO_TEXT("./replay/_LastReplay.yrp"));
+		last_replay.BeginRecord(true, Replay::GetReplayFilePath(EPRO_TEXT("_LastReplay.yrp")));
 		last_replay.WriteHeader(replay_header);
 		//records the replay with the new system
 		new_replay.BeginRecord();
@@ -130,14 +131,14 @@ restart:
 			last_replay.Write<uint32_t>(static_cast<uint32_t>(playerdeck.main.size()), false);
 			for (int32_t i = (int32_t)playerdeck.main.size() - 1; i >= 0; --i) {
 				card_info.code = playerdeck.main[i]->code;
-				OCG_DuelNewCard(pduel, card_info);
+				OCG_DuelNewCard(pduel, &card_info);
 				last_replay.Write<uint32_t>(playerdeck.main[i]->code, false);
 			}
 			card_info.loc = LOCATION_EXTRA;
 			last_replay.Write<uint32_t>(static_cast<uint32_t>(playerdeck.extra.size()), false);
 			for (int32_t i = (int32_t)playerdeck.extra.size() - 1; i >= 0; --i) {
 				card_info.code = playerdeck.extra[i]->code;
-				OCG_DuelNewCard(pduel, card_info);
+				OCG_DuelNewCard(pduel, &card_info);
 				last_replay.Write<uint32_t>(playerdeck.extra[i]->code, false);
 			}
 		};
@@ -155,7 +156,7 @@ restart:
 		if(open_file) {
 			script_name = Utils::ToUTF8IfNeeded(open_file_name);
 			if(!mainGame->LoadScript(pduel, script_name)) {
-				script_name = epro::format("./puzzles/{}" ,script_name);
+				script_name = epro::format("./puzzles/{}", script_name);
 				loaded = mainGame->LoadScript(pduel, script_name);
 			}
 		} else {
@@ -268,7 +269,7 @@ restart:
 	if(saveReplay && !was_restarting) {
 		auto now = std::time(nullptr);
 		std::unique_lock<epro::mutex> lock(mainGame->gMutex);
-		mainGame->PopupSaveWindow(gDataManager->GetSysString(1340), epro::format(L"{:%Y-%m-%d %H-%M-%S}", fmt::localtime(now)), gDataManager->GetSysString(1342));
+		mainGame->PopupSaveWindow(gDataManager->GetSysString(1340), epro::format(L"{:%Y-%m-%d %H-%M-%S}", epro::localtime(now)), gDataManager->GetSysString(1342));
 		mainGame->replaySignal.Wait(lock);
 		if(mainGame->saveReplay)
 			new_replay.SaveReplay(Utils::ToPathString(mainGame->ebFileSaveName->getText()));
@@ -516,7 +517,8 @@ bool SingleMode::SinglePlayAnalyze(CoreUtils::Packet& packet) {
 void SingleMode::SinglePlayRefresh(uint8_t player, uint8_t location, uint32_t flag) {
 	std::vector<uint8_t> buffer;
 	uint32_t len = 0;
-	auto buff = OCG_DuelQueryLocation(pduel, &len, { flag, player, location });
+	OCG_QueryInfo info{ flag, player, location };
+	auto buff = OCG_DuelQueryLocation(pduel, &len, &info);
 	if(len == 0)
 		return;
 	buffer.resize(buffer.size() + len);
@@ -531,7 +533,8 @@ void SingleMode::SinglePlayRefresh(uint8_t player, uint8_t location, uint32_t fl
 void SingleMode::SinglePlayRefreshSingle(uint8_t player, uint8_t location, uint8_t sequence, uint32_t flag) {
 	std::vector<uint8_t> buffer;
 	uint32_t len = 0;
-	auto buff = OCG_DuelQuery(pduel, &len, { flag, player, location, sequence });
+	OCG_QueryInfo info{ flag, player, location, sequence };
+	auto buff = OCG_DuelQuery(pduel, &len, &info);
 	if(buff == nullptr)
 		return;
 	buffer.resize(buffer.size() + len);

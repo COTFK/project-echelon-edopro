@@ -213,8 +213,9 @@ void Game::Initialize() {
 											L"\n"
 											L"Project Ignis:\n"
 											L"ahtelel, Cybercatman, Dragon3989, DyXel, edo9300, EerieCode,"
-											L"Gideon, Hatter, Icematoro, Larry126, LogicalNonsense, pyrQ, Sanct,"
+											L"Finn, Gideon, Hatter, Icematoro, Larry126, Naim, pyrQ, Sanct,"
 											L"senpaizuri, Steeldarkeagel, TheRazgriz, WolfOfWolves, Yamato, YoshiDuels\n"
+											L"\n"
 											L"Default background and icon: LogicalNonsense\n"
 											L"Default fields: Icematoro\n"
 											L"\n"
@@ -748,7 +749,7 @@ void Game::Initialize() {
 	wReplay->getCloseButton()->setVisible(false);
 	wReplay->setVisible(false);
 	lstReplayList = irr::gui::CGUIFileSelectListBox::addFileSelectListBox(env, wReplay, LISTBOX_REPLAY_LIST, Scale(10, 30, 350, 400), true, true, false);
-	lstReplayList->setWorkingPath(L"./replay", true);
+	lstReplayList->setWorkingPath(Utils::ToUnicodeIfNeeded(Replay::GetReplayFolder()), true);
 	lstReplayList->addFilteredExtensions({L"yrp", L"yrpx"});
 	lstReplayList->setItemHeight(Scale(18));
 	btnLoadReplay = env->addButton(Scale(470, 355, 570, 380), wReplay, BUTTON_LOAD_REPLAY, gDataManager->GetSysString(1348).data());
@@ -1107,12 +1108,12 @@ bool Game::LoadCore() {
 	coreJustLoaded = false;
 	ocgcore = LoadOCGcore(Utils::GetWorkingDirectory());
 	if(ocgcore){
-		corename = Utils::ToUnicodeIfNeeded(Utils::GetWorkingDirectory());
+		corename = L"./";
 	} else {
 		const auto path = epro::format(EPRO_TEXT("{}/expansions/"), Utils::GetWorkingDirectory());
 		ocgcore = LoadOCGcore(path);
 		if(ocgcore)
-			corename = Utils::ToUnicodeIfNeeded(path);
+			corename = L"./expansions/";
 	}
 	coreloaded = ocgcore != nullptr;
 	if(gRepoManager->IsReadOnly())
@@ -1766,6 +1767,21 @@ void Game::PopulateSettingsWindow() {
 
 		ResetXandY();
 		auto* sPanel = gSettings.sound.panel->getSubpanel();
+
+		if constexpr(SoundManager::HasMultipleBackends()) {
+			gSettings.stAudioBackend = env->addStaticText(gDataManager->GetSysString(12125).data(), GetCurrentRectWithXOffset(15, 115), false, true, sPanel);
+			defaultStrings.emplace_back(gSettings.stAudioBackend, 12125);
+			gSettings.cbAudioBackend = AddComboBox(env, GetCurrentRectWithXOffset(120, 320), sPanel, -1);
+			int selected_backend = 0;
+			for(const auto& backend : SoundManager::GetSupportedBackends()) {
+				if(auto idx = gSettings.cbAudioBackend->addItem(epro::to_wstring(backend).data(), backend); backend == gGameConfig->sound_backend) {
+					selected_backend = idx;
+				}
+			}
+			gSettings.cbAudioBackend->setSelected(selected_backend);
+			cur_y += y_incr;
+		}
+
 		gSettings.chkEnableSound = env->addCheckBox(gGameConfig->enablesound, GetNextRect(), sPanel, CHECKBOX_ENABLE_SOUND, gDataManager->GetSysString(2047).data());
 		menuHandler.MakeElementSynchronized(gSettings.chkEnableSound);
 		defaultStrings.emplace_back(gSettings.chkEnableSound, 2047);
@@ -2098,10 +2114,10 @@ bool Game::MainLoop() {
 			else
 				gSoundManager->PlayBGM(SoundManager::BGM::DUEL, gGameConfig->loopMusic);
 			EnableMaterial2D(true);
-			if(current_topdown)
-				DrawBackImage(imageManager.tBackGround_duel_topdown, resized);
-			else
-				DrawBackImage(imageManager.tBackGround, resized);
+			auto bg_texture = imageManager.tBackGround;
+			if(current_topdown && imageManager.tBackGround_duel_topdown)
+				bg_texture = imageManager.tBackGround_duel_topdown;
+			DrawBackImage(bg_texture, resized);
 			DrawBackGround();
 			DrawCards();
 			DrawMisc();
@@ -2115,7 +2131,7 @@ bool Game::MainLoop() {
 			else
 				discord.UpdatePresence(DiscordWrapper::DECK);
 			gSoundManager->PlayBGM(SoundManager::BGM::DECK, gGameConfig->loopMusic);
-			DrawBackImage(imageManager.tBackGround_deck, resized);
+			DrawBackImage(imageManager.tBackGround_deck ? imageManager.tBackGround_deck : imageManager.tBackGround, resized);
 			EnableMaterial2D(true);
 			DrawDeckBd();
 			EnableMaterial2D(false);
@@ -2125,7 +2141,7 @@ bool Game::MainLoop() {
 			else
 				discord.UpdatePresence(DiscordWrapper::MENU);
 			gSoundManager->PlayBGM(SoundManager::BGM::MENU, gGameConfig->loopMusic);
-			DrawBackImage(imageManager.tBackGround_menu, resized);
+			DrawBackImage(imageManager.tBackGround_menu ? imageManager.tBackGround_menu : imageManager.tBackGround, resized);
 		}
 		if(current_topdown != gGameConfig->topdown_view || current_keep_aspect_ratio != gGameConfig->keep_aspect_ratio) {
 			if(std::exchange(gGameConfig->topdown_view, current_topdown) != gGameConfig->topdown_view)
@@ -2443,7 +2459,7 @@ bool Game::ApplySkin(const epro::path_string& skinname, bool reload, bool firstr
 }
 void Game::RefreshDeck(irr::gui::IGUIComboBox* cbDeck) {
 	cbDeck->clear();
-	for(auto& file : Utils::FindFiles(EPRO_TEXT("./deck/"), { EPRO_TEXT("ydk") })) {
+	for(auto& file : Utils::FindFiles(DeckManager::GetDeckFolder(), { EPRO_TEXT("ydk") })) {
 		file.erase(file.size() - 4);
 		cbDeck->addItem(Utils::ToUnicodeIfNeeded(file).data());
 	}
@@ -2592,6 +2608,9 @@ void Game::SaveConfig() {
 	gGameConfig->useIntegratedGpu = gSettings.chkIntegratedGPU->isChecked();
 #endif
 	gGameConfig->driver_type = static_cast<irr::video::E_DRIVER_TYPE>(gSettings.cbVideoDriver->getItemData(gSettings.cbVideoDriver->getSelected()));
+	if constexpr(SoundManager::HasMultipleBackends()) {
+		gGameConfig->sound_backend = static_cast<SoundManager::BACKEND>(gSettings.cbAudioBackend->getItemData(gSettings.cbAudioBackend->getSelected()));
+	}
 #if EDOPRO_ANDROID
 	if(gGameConfig->Save(epro::format("{}/system.conf", porting::internal_storage))) {
 		Utils::FileCopy(epro::format("{}/system.conf", porting::internal_storage), EPRO_TEXT("./config/system.conf"));
@@ -3451,6 +3470,8 @@ void Game::ReloadCBLimit() {
 	} else {
 		chkAnime->setEnabled(false);
 		cbLimit->addItem(gDataManager->GetSysString(1912).data(), DeckBuilder::LIMITATION_FILTER_LEGEND);
+		cbLimit->addItem(gDataManager->GetSysString(1266).data(), DeckBuilder::LIMITATION_FILTER_ILLEGAL);
+		cbLimit->addItem(gDataManager->GetSysString(1903).data(), DeckBuilder::LIMITATION_FILTER_PRERELEASE);
 		cbLimit->addItem(gDataManager->GetSysString(1310).data(), DeckBuilder::LIMITATION_FILTER_ALL);
 	}
 }
@@ -4229,7 +4250,7 @@ OCG_Duel Game::SetupDuel(OCG_DuelOptions opts) {
 	opts.payload3 = this;
 	opts.enableUnsafeLibraries = 1;
 	OCG_Duel pduel = nullptr;
-	OCG_CreateDuel(&pduel, opts);
+	OCG_CreateDuel(&pduel, &opts);
 	LoadScript(pduel, "constant.lua");
 	LoadScript(pduel, "utility.lua");
 	for(const auto& script : init_scripts) {

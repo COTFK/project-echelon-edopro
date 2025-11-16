@@ -4,6 +4,7 @@
 #include "cli_args.h"
 #include "utils_gui.h"
 #include "deck_manager.h"
+#include "replay.h"
 #include "logging.h"
 #include "fmt.h"
 #include "utils.h"
@@ -133,8 +134,25 @@ DataHandler::DataHandler() {
 	Utils::filesystem = filesystem;
 	LoadZipArchives();
 	deckManager = std::make_unique<DeckManager>();
+	DeckManager::SetDeckFolder(Utils::GetUserFolderPathFor(EPRO_TEXT("./deck/")));
+	Replay::SetReplayFolder(Utils::GetUserFolderPathFor(EPRO_TEXT("./replay/")));
 	gitManager = std::make_unique<RepoManager>();
-	sounds = std::make_unique<SoundManager>(configs->soundVolume / 100.0, configs->musicVolume / 100.0, configs->enablesound, configs->enablemusic);
+	auto sound_backend = SoundManager::DEFAULT;
+	if constexpr(SoundManager::HasMultipleBackends()) {
+		auto sound_backend_valid = [wanted_backend = configs->sound_backend]() -> bool {
+			for(const auto& backend : SoundManager::GetSupportedBackends()) {
+				if(backend == wanted_backend)
+					return true;
+			}
+			return false;
+		}();
+		if(!sound_backend_valid) {
+			auto old = std::exchange(configs->sound_backend, SoundManager::DEFAULT);
+			epro::print("Wanted {} audio backend but not supported, using {} instead\n", old, SoundManager::GetDefaultBackend());
+		}
+		sound_backend = configs->sound_backend;
+	}
+	sounds = std::make_unique<SoundManager>(configs->soundVolume / 100.0, configs->musicVolume / 100.0, configs->enablesound, configs->enablemusic, sound_backend);
 	gitManager->ToggleReadOnly(cli_args[REPOS_READ_ONLY].enabled);
 	gitManager->LoadRepositoriesFromJson(configs->user_configs);
 	gitManager->LoadRepositoriesFromJson(configs->configs);
@@ -145,7 +163,6 @@ DataHandler::DataHandler() {
 	LoadPicUrls();
 	deckManager->LoadLFList();
 	dataManager->LoadIdsMapping(EPRO_TEXT("./config/mappings.json"));
-	WindBotPanel::absolute_deck_path = Utils::ToUnicodeIfNeeded(Utils::GetAbsolutePath(EPRO_TEXT("./deck")));
 }
 DataHandler::~DataHandler() {
 	if(filesystem)

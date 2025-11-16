@@ -27,6 +27,7 @@
 #include <IGUIWindow.h>
 #include "address.h"
 #include "fmt.h"
+#include "localtime.h"
 
 namespace ygo {
 
@@ -102,6 +103,7 @@ bool MenuHandler::OnEvent(const irr::SEvent& event) {
 		if(mainGame->wMessage->isVisible() && id != BUTTON_MSG_OK &&
 		   prev_operation != ACTION_UPDATE_PROMPT
 		   && prev_operation != ACTION_SHOW_CHANGELOG
+		   && prev_operation != ACTION_ACKNOWLEDGE_HOST
 #if EDOPRO_LINUX && (IRRLICHT_VERSION_MAJOR==1 && IRRLICHT_VERSION_MINOR==9)
 		   && prev_operation != ACTION_TRY_WAYLAND
 #endif
@@ -309,7 +311,8 @@ bool MenuHandler::OnEvent(const irr::SEvent& event) {
 				const auto selected = mainGame->cbDeckSelect->getSelected();
 				if(selected == -1)
 					break;
-				if(!mainGame->deckBuilder.SetCurrentDeckFromFile(Utils::ToPathString(mainGame->cbDeckSelect->getItem(selected))))
+				if(!mainGame->deckBuilder.SetCurrentDeckFromFile(Utils::ToPathString(mainGame->cbDeckSelect->getItem(selected)), false,
+																 mainGame->dInfo.HasFieldFlag(DUEL_EXTRA_DECK_RITUAL) ? RITUAL_LOCATION::EXTRA : RITUAL_LOCATION::MAIN))
 					break;
 				UpdateDeck();
 				DuelClient::SendPacketToServer(CTOS_HS_READY);
@@ -629,12 +632,16 @@ bool MenuHandler::OnEvent(const irr::SEvent& event) {
 					auto oldpath = Utils::GetFilePath(oldname);
 					auto extension = Utils::GetFileExtension(oldname, false);
 					auto newname = Utils::ToPathString(mainGame->ebFileSaveName->getText());
-					if(Utils::GetFileExtension(newname, false) != extension)
-						newname.append(1, EPRO_TEXT('.')).append(extension);
-					if(Utils::FileMove(oldname, oldpath + newname))
-						list->refreshList();
-					else
+					if(newname.find_first_of(EPRO_TEXT("/\\")) != newname.npos) {
 						mainGame->PopupMessage(gDataManager->GetSysString(1365));
+					} else {
+						if(Utils::GetFileExtension(newname, false) != extension)
+							newname.append(1, EPRO_TEXT('.')).append(extension);
+						if(Utils::FileMove(oldname, oldpath + newname))
+							list->refreshList();
+						else
+							mainGame->PopupMessage(gDataManager->GetSysString(1365));
+					}
 				}
 				prev_operation = 0;
 				prev_sel = -1;
@@ -693,7 +700,7 @@ bool MenuHandler::OnEvent(const irr::SEvent& event) {
 				mainGame->btnShareReplay->setEnabled(true);
 				std::wstring repinfo;
 				time_t curtime = replay.pheader.base.timestamp;
-				repinfo.append(epro::format(L"{:%Y/%m/%d %H:%M:%S}\n", fmt::localtime(curtime)));
+				repinfo.append(epro::format(L"{:%Y/%m/%d %H:%M:%S}\n", epro::localtime(curtime)));
 				const auto& names = replay.GetPlayerNames();
 				for(int i = 0; i < replay.GetPlayersCount(0); i++) {
 					repinfo.append(names[i] + L"\n");
@@ -805,7 +812,10 @@ bool MenuHandler::OnEvent(const irr::SEvent& event) {
 				mainGame->env->setFocus(mainGame->wHostPrepare);
 				if(static_cast<irr::gui::IGUICheckBox*>(caller)->isChecked()) {
 					const auto selected = mainGame->cbDeckSelect->getSelected();
-					if(selected == -1 || !mainGame->deckBuilder.SetCurrentDeckFromFile(Utils::ToPathString(mainGame->cbDeckSelect->getItem(selected)))) {
+					if(selected == -1 ||
+					   !mainGame->deckBuilder.SetCurrentDeckFromFile(
+						   Utils::ToPathString(mainGame->cbDeckSelect->getItem(selected)), false,
+						   mainGame->dInfo.HasFieldFlag(DUEL_EXTRA_DECK_RITUAL) ? RITUAL_LOCATION::EXTRA : RITUAL_LOCATION::MAIN)) {
 						static_cast<irr::gui::IGUICheckBox*>(caller)->setChecked(false);
 						break;
 					}

@@ -8,14 +8,9 @@ newoption {
 }
 newoption {
 	trigger = "sound",
-	value = "backend",
+	value = "backends",
 	description = "Choose sound backend",
-	allowed = {
-		{ "irrklang",  "irrklang" },
-		{ "sdl-mixer",  "SDL2-mixer" },
-		{ "sfml",  "SFML" },
-		{ "miniaudio",  "Miniaudio" }
-	}
+	description = "Sound backends for the solution, allowed values are any combination of irrklang, sdl-mixer, sdl3-mixer, sfml and miniaudio, comma separated"
 }
 newoption {
 	trigger = "use-mpg123",
@@ -75,10 +70,6 @@ newoption {
 	value = "font",
 	description = "Path to a font file that will be bundled in the client and used as fallback font for missing glyphs"
 }
-newoption {
-	trigger = "lua-path",
-	description = "Path where the lua library has been installed"
-}
 
 local function default_arch()
 	if os.istarget("linux") or os.istarget("macosx") then return "x64" end
@@ -89,6 +80,10 @@ end
 local function valid_arch(arch)
 	return arch == "x86" or arch == "x64" or arch == "arm64" or arch == "armv7"
 		or arch == "x86-iossim" or arch == "x64-iossim" or arch == "arm64-iossim"
+end
+
+local function valid_sound(sound)
+	return sound == "irrklang" or sound == "sdl-mixer" or sound == "sfml" or sound == "miniaudio"
 end
 
 local absolute_vcpkg_path =(function()
@@ -132,6 +127,18 @@ end
 
 if #archs == 0 then archs = { default_arch() } end
 
+sounds={}
+
+if _OPTIONS["sound"] then
+	print(_OPTIONS["sound"])
+	for sound in string.gmatch(_OPTIONS["sound"], "([^,]+)") do
+		if valid_sound(sound) then
+			print(sound)
+			sounds[sound]=true
+		end
+	end
+end
+
 local _includedirs=includedirs
 if _ACTION=="xcode4" then
 	_includedirs=sysincludedirs
@@ -150,6 +157,7 @@ workspace "ygo"
 	warnings "Extra"
 	filter { "action:vs*" }
 		disablewarnings "4100" --'identifier' : unreferenced formal parameter
+		disablewarnings "4244" --conversion from 'T1' to 'T2'. Possible loss of data
 	filter { "action:not vs*" }
 		disablewarnings { "unknown-warning-option", "unused-parameter", "unknown-pragmas", "ignored-qualifiers", "missing-field-initializers", "implicit-const-int-float-conversion", "missing-braces", "invalid-utf8" }
 	filter { "action:not vs*", "files:**.cpp" }

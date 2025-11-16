@@ -2,6 +2,7 @@
 #include "sound_miniaudio.h"
 
 #include <utility>
+#include "../../compiler_features.h"
 #include "../../fmt.h"
 #include "../../utils.h"
 
@@ -26,9 +27,15 @@ namespace {
 #define MA_API static
 #define MA_NO_ENCODING
 #define MINIAUDIO_IMPLEMENTATION
-#if EDOPRO_WINDOWS && !defined(WIN32_LEAN_AND_MEAN)
+#if EDOPRO_WINDOWS
+#if !defined(WIN32_LEAN_AND_MEAN)
 #define WIN32_LEAN_AND_MEAN
 #endif
+// needed to support drag and drop
+#define MA_COINIT_VALUE 0x2 /*COINIT_APARTMENTTHREADED*/
+#endif
+
+#define MA_ON_THREAD_ENTRY do {ygo::Utils::SetThreadName("miniaudio");} while(0);
 
 #include "miniaudio.h"
 #ifdef PlaySound
@@ -55,6 +62,11 @@ SoundMiniaudioBase::SoundMiniaudioBase() : engine{ nullptr, &FreeEngine }, sound
 			throw std::runtime_error(epro::format("Failed to initialize miniaudio engine, {}", ma_result_description(res)));
 		}
 		engine = EnginePtr{ tmp_engine.release(), &FreeEngine };
+		ma_log_register_callback(ma_engine_get_log(engine.get()),
+								 ma_log_callback_init(
+									 []([[maybe_unused]] void* userdata, ma_uint32 level, const char* message) {
+											epro::print("Miniaudio {}: {}\n", ma_log_level_to_string(level), message);
+										}, nullptr));
 	}
 	{
 		auto tmp_sound_group = std::make_unique<MaSoundGroup>();
@@ -220,6 +232,7 @@ namespace {
 #pragma warning(disable : 4456) // declaration of 'z' hides previous local declaration
 #pragma warning(disable : 4457) // declaration of 'm' hides function parameter
 #pragma warning(disable : 4245) // '=': conversion from 'int' to '`uint32', signed/unsigned mismatch
+#pragma warning(disable : 4701) // potentially uninitialized local variable used
 #endif
 
 

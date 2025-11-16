@@ -129,9 +129,9 @@ void DeckBuilder::Terminate(bool showmenu) {
 		gGameConfig->lastdeck = mainGame->cbDBDecks->getItem(sel);
 	gGameConfig->lastlflist = gdeckManager->_lfList[mainGame->cbDBLFList->getSelected()].hash;
 }
-bool DeckBuilder::SetCurrentDeckFromFile(epro::path_stringview file, bool separated) {
+bool DeckBuilder::SetCurrentDeckFromFile(epro::path_stringview file, bool separated, RITUAL_LOCATION rituals_in_extra) {
 	Deck tmp;
-	if(!DeckManager::LoadDeckFromFile(file, tmp, separated))
+	if(!DeckManager::LoadDeckFromFile(file, tmp, separated, rituals_in_extra))
 		return false;
 	SetCurrentDeck(std::move(tmp));
 	return true;
@@ -139,17 +139,18 @@ bool DeckBuilder::SetCurrentDeckFromFile(epro::path_stringview file, bool separa
 void DeckBuilder::ImportDeck() {
 	const wchar_t* deck_string = Utils::OSOperator->getTextFromClipboard();
 	if(deck_string) {
-		if(wcsncmp(L"ydke://", deck_string, sizeof(L"ydke://") / sizeof(wchar_t) - 1) == 0)
-			DeckManager::ImportDeckBase64(current_deck, deck_string);
+		epro::wstringview text{ deck_string };
+		if(starts_with(text, L"ydke://"))
+			DeckManager::ImportDeckYdke(current_deck, text.data());
 		else
-			(void)DeckManager::ImportDeckBase64Omega(current_deck, deck_string);
+			(void)DeckManager::ImportDeckBase64Omega(current_deck, text);
 		RefreshLimitationStatus();
 	}
 }
 void DeckBuilder::ExportDeckToClipboard(bool plain_text) {
-	auto deck_string = plain_text ? DeckManager::ExportDeckCardNames(current_deck) : DeckManager::ExportDeckBase64(current_deck);
-	if(deck_string) {
-		Utils::OSOperator->copyToClipboard(deck_string);
+	auto deck_string = plain_text ? DeckManager::ExportDeckCardNames(current_deck) : DeckManager::ExportDeckYdke(current_deck);
+	if(!deck_string.empty()) {
+		Utils::OSOperator->copyToClipboard(deck_string.data());
 		mainGame->stACMessage->setText(gDataManager->GetSysString(1368).data());
 	} else {
 		mainGame->stACMessage->setText(gDataManager->GetSysString(1369).data());
@@ -275,7 +276,7 @@ bool DeckBuilder::OnEvent(const irr::SEvent& event) {
 					break;
 				int sel = -1;
 				{
-					const auto upper = Utils::ToUpperNoAccents<std::wstring>({ dname.data(), dname.size() });
+					const auto upper = Utils::ToUpperNoAccents(dname);
 					for(irr::u32 i = 0; i < mainGame->cbDBDecks->getItemCount(); ++i) {
 						if(Utils::EqualIgnoreCaseFirst<epro::wstringview>(upper, mainGame->cbDBDecks->getItem(i))) {
 							sel = i;
@@ -834,13 +835,14 @@ bool DeckBuilder::OnEvent(const irr::SEvent& event) {
 				irr::gui::IGUIElement* root = mainGame->env->getRootGUIElement();
 				if(root->getElementFromPoint({ event.DropEvent.X, event.DropEvent.Y }) != root)
 					break;
-				if(wcsncmp(L"ydke://", event.DropEvent.Text, sizeof(L"ydke://") / sizeof(wchar_t) - 1) == 0) {
-					gdeckManager->ImportDeckBase64(current_deck, event.DropEvent.Text);
+				epro::wstringview text{ event.DropEvent.Text };
+				if(starts_with(text, L"ydke://")) {
+					gdeckManager->ImportDeckYdke(current_deck, text);
 					return true;
 				}
-				if(gdeckManager->ImportDeckBase64Omega(current_deck, event.DropEvent.Text))
+				if(gdeckManager->ImportDeckBase64Omega(current_deck, text))
 					return true;
-				std::wstringstream ss(Utils::ToUpperNoAccents<std::wstring>(event.DropEvent.Text));
+				std::wstringstream ss(Utils::ToUpperNoAccents(text));
 				std::wstring to;
 				int firstcode = 0;
 				while(std::getline(ss, to)) {
@@ -1059,9 +1061,10 @@ void DeckBuilder::StartFilter(bool force_refresh) {
 }
 void DeckBuilder::FilterCards(bool force_refresh) {
 	results.clear();
-	std::vector<std::wstring> searchterms;
+	std::vector<epro::wstringview> searchterms;
+	const auto uppercase_text = Utils::ToUpperNoAccents(mainGame->ebCardName->getText());
 	if(wcslen(mainGame->ebCardName->getText())) {
-		searchterms = Utils::TokenizeString<std::wstring>(Utils::ToUpperNoAccents<std::wstring>(mainGame->ebCardName->getText()), L"||");
+		searchterms = Utils::TokenizeString<epro::wstringview>(uppercase_text, L"||");
 	} else
 		searchterms = { L"" };
 	if(FiltersChanged() || force_refresh)
@@ -1084,7 +1087,12 @@ void DeckBuilder::FilterCards(bool force_refresh) {
 		int trycode = BufferIO::GetVal(term_.data());
 		const CardDataC* data = nullptr;
 		if(trycode && (data = gDataManager->GetCardData(trycode))) {
-			searched_terms[term_] = { data };
+			auto it = searched_terms.find(term_);
+			if(it != searched_terms.end()) {
+				it->second = { data };
+			} else {
+				searched_terms.emplace(std::wstring{ term_ }, std::vector{ data });
+			}
 			continue;
 		}
 		auto subterms = Utils::TokenizeString<epro::wstringview>(term_, L"&&");
@@ -1139,11 +1147,18 @@ void DeckBuilder::FilterCards(bool force_refresh) {
 			searchterm_results.push_back(&card.second._data);
 		skip:;
 		}
-		if(searchterm_results.size())
-			searched_terms[term_] = searchterm_results;
+		if(searchterm_results.size()) {
+			auto it = searched_terms.find(term_);
+			if(it != searched_terms.end()) {
+				it->second.swap(searchterm_results);
+			} else {
+				searched_terms.emplace(std::wstring{ term_ }, std::move(searchterm_results));
+			}
+		}
 	}
-	for(const auto& res : searched_terms) {
-		results.insert(results.end(), res.second.begin(), res.second.end());
+	for(const auto& [term, individual_results] : searched_terms) {
+		results.reserve(results.size() + individual_results.size());
+		results.insert(results.end(), individual_results.begin(), individual_results.end());
 	}
 	SortList();
 	auto ip = std::unique(results.begin(), results.end());
@@ -1363,8 +1378,19 @@ void DeckBuilder::ClearFilter() {
 		mainGame->btnMark[i]->setPressed(false);
 }
 void DeckBuilder::SortList() {
+	auto last = [&] {
+		auto it = results.begin(), left = it;
+		for(; it != results.end(); ++it) {
+			if(searched_terms.find(gDataManager->GetUppercaseName((*it)->code)) != searched_terms.end()) {
+				std::iter_swap(left, it);
+				++left;
+			}
+		}
+		return left;
+	}();
 	auto sort = [&](auto& comparator) {
-		std::sort(results.begin(), results.end(), comparator);
+		std::sort(last, results.end(), comparator);
+		std::sort(results.begin(), last, comparator);
 	};
 	switch(mainGame->cbSortType->getSelected()) {
 	case 0:
@@ -1379,12 +1405,6 @@ void DeckBuilder::SortList() {
 	case 3:
 		sort(DataManager::deck_sort_name);
 		break;
-	}
-	for(auto it = results.begin(), left = it; it != results.end(); ++it) {
-		if(searched_terms.find(gDataManager->GetUppercaseName((*it)->code)) != searched_terms.end()) {
-			std::iter_swap(left, it);
-			++left;
-		}
 	}
 }
 void DeckBuilder::ClearDeck() {

@@ -33,6 +33,7 @@ auto GetOption(epro::path_stringview option) {
 		case EPRO_TEXT('u'): return LAUNCH_PARAM::OVERRIDE_UPDATE_URL;
 		case EPRO_TEXT('r'): return LAUNCH_PARAM::REPOS_READ_ONLY;
 		case EPRO_TEXT('c'): return LAUNCH_PARAM::ONLY_CLONE_REPOS;
+		case EPRO_TEXT('U'): return LAUNCH_PARAM::USER_STORAGE_DIRECTORY;
 		case EPRO_TEXT('q'): return LAUNCH_PARAM::EXIT_AFTER;
 		case EPRO_TEXT('n'): return LAUNCH_PARAM::SET_NICKNAME;
 		case EPRO_TEXT('d'): return LAUNCH_PARAM::SET_DECK;
