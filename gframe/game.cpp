@@ -3676,7 +3676,7 @@ void Game::LaunchReplay(epro::path_string replay) {
 	wMainMenu->setVisible(false);
 	GUIUtils::ClickButton(device, btnReplayMode);
 	menuHandler.LoadReplay();
-	ReplayMode::Pause(true, false);
+	// ReplayMode::Pause(true, false);
 	btnReplayStart->setVisible(true);
 	btnReplayPause->setVisible(false);
 	btnReplayStep->setVisible(true);
