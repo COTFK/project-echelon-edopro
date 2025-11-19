@@ -111,7 +111,11 @@ std::shared_ptr<irr::IrrlichtDevice> GUIUtils::CreateDevice(GameConfig* configs)
 #endif
 #endif
 #if !EDOPRO_ANDROID
-	params.WindowSize = { (irr::u32)(1024 * configs->dpi_scale), (irr::u32)(640 * configs->dpi_scale) };
+	if(configs->window_width > 0 && configs->window_height > 0)
+		params.WindowSize = { configs->window_width, configs->window_height };
+	else
+		params.WindowSize = { (irr::u32)(1024 * configs->dpi_scale), (irr::u32)(640 * configs->dpi_scale) };
+	epro::print("CreateDevice: WindowSize set to {}x{}\n", params.WindowSize.Width, params.WindowSize.Height);
 #else
 	params.PrivateData = porting::app_global;
 	params.Bits = 24;

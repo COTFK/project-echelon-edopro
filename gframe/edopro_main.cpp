@@ -50,6 +50,10 @@ auto GetOption(epro::path_stringview option) {
 		return LAUNCH_PARAM::JOIN;
 	if(option == EPRO_TEXT("deckbuilder"))
 		return LAUNCH_PARAM::DECKBUILDER;
+	if(option == EPRO_TEXT("width"))
+		return LAUNCH_PARAM::SET_WIDTH;
+	if(option == EPRO_TEXT("height"))
+		return LAUNCH_PARAM::SET_HEIGHT;
 	return LAUNCH_PARAM::COUNT;
 }
 
@@ -60,11 +64,17 @@ auto ParseArguments(int argc, epro::path_char* argv[]) {
 		if(parameter.size() < 2)
 			break;
 		if(parameter[0] == EPRO_TEXT('-')) {
-			auto launch_param = GetOption(parameter.substr(1));
+			epro::path_stringview param = parameter.substr(1);
+			size_t start = (param.size() > 0 && param[0] == EPRO_TEXT('-')) ? 1 : 0;
+			size_t eq_pos = param.find(EPRO_TEXT('='), start);
+			epro::path_stringview option = param.substr(start, eq_pos - start);
+			auto launch_param = GetOption(option);
 			if(launch_param == LAUNCH_PARAM::COUNT)
 				continue;
 			epro::path_stringview argument;
-			if(i + 1 < argc) {
+			if(eq_pos != epro::path_stringview::npos) {
+				argument = param.substr(eq_pos + 1);
+			} else if(i + 1 < argc) {
 				const auto* next = argv[i + 1];
 				if(next[0] != EPRO_TEXT('-')) {
 					argument = next;

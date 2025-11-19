@@ -81,6 +81,8 @@ OPTION(float, dpi_scale, 2.f)
 #else
 OPTION(float, dpi_scale, 1.f)
 #endif
+OPTION(uint32_t, window_width, 0)
+OPTION(uint32_t, window_height, 0)
 OPTION(epro::path_string, skin, EPRO_TEXT("none"))
 OPTION(std::string, override_ssl_certificate_path, "")
 OPTION_ALIASED(epro::path_string, locale, language, EPRO_TEXT("English"))

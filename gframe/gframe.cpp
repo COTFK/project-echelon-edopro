@@ -194,6 +194,26 @@ int edopro_main(const args_t& args) {
 		ygo::GUIUtils::ShowErrorWindow("Initialization fail", text);
 		return EXIT_FAILURE;
 	}
+	if(args[LAUNCH_PARAM::SET_WIDTH].enabled && !args[LAUNCH_PARAM::SET_WIDTH].argument.empty()) {
+		try {
+			ygo::gGameConfig->window_width = std::stoul(ygo::Utils::ToUTF8IfNeeded(args[LAUNCH_PARAM::SET_WIDTH].argument));
+			epro::print("CLI: Set window_width to {}\n", ygo::gGameConfig->window_width);
+		} catch(...) {
+			epro::print("CLI: Failed to parse window_width\n");
+		}
+	}
+	if(args[LAUNCH_PARAM::SET_HEIGHT].enabled && !args[LAUNCH_PARAM::SET_HEIGHT].argument.empty()) {
+		try {
+			ygo::gGameConfig->window_height = std::stoul(ygo::Utils::ToUTF8IfNeeded(args[LAUNCH_PARAM::SET_HEIGHT].argument));
+			epro::print("CLI: Set window_height to {}\n", ygo::gGameConfig->window_height);
+		} catch(...) {
+			epro::print("CLI: Failed to parse window_height\n");
+		}
+	}
+	if(ygo::gGameConfig->window_width > 0 && ygo::gGameConfig->window_height > 0) {
+		ygo::gGameConfig->dpi_scale = std::min(ygo::gGameConfig->window_width / 1024.0f, ygo::gGameConfig->window_height / 640.0f);
+		epro::print("CLI: Adjusted dpi_scale to {}\n", ygo::gGameConfig->dpi_scale);
+	}
 	if (!data->configs->noClientUpdates)
 		updater.CheckUpdates();
 #if EDOPRO_WINDOWS
@@ -219,6 +239,7 @@ int edopro_main(const args_t& args) {
 		Game _game{};
 		ygo::mainGame = &_game;
 		std::swap(data->tmp_device, ygo::mainGame->device);
+		epro::print("Before Initialize, window_width = {}, window_height = {}, dpi_scale = {}\n", ygo::gGameConfig->window_width, ygo::gGameConfig->window_height, ygo::gGameConfig->dpi_scale);
 		try {
 			ygo::mainGame->Initialize();
 		}
