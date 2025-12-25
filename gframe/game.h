@@ -769,6 +769,7 @@ public:
 	epro::mutex progressStatusLock;
 	ProgressBarStatus progressStatus;
 	bool exitAfter;
+	bool replayFailed{};
 
 #define sizeofarr(arr) (sizeof(arr)/sizeof(decltype(*arr)))
 

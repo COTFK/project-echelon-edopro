@@ -51,25 +51,27 @@ static void UpdateDeck() {
 	DuelClient::SendBufferToServer(CTOS_UPDATE_DECK, deckbuf, pdeck - deckbuf);
 	gdeckManager->sent_deck = mainGame->deckBuilder.GetCurrentDeck();
 }
-void MenuHandler::LoadReplay() {
+bool MenuHandler::LoadReplay() {
 	auto& replay = ReplayMode::cur_replay;
 	if(std::exchange(open_file, false)) {
 		bool res = replay.OpenReplay(open_file_name);
-		if(!res || (replay.IsOldReplayMode() && (!mainGame->coreloaded || !replay.CanBePlayedInOldMode())))
-			return;
+		if(!res || (replay.IsOldReplayMode() && (!mainGame->coreloaded || !replay.CanBePlayedInOldMode()))) {
+			return false;
+		}
 	} else {
 		const auto& list = mainGame->lstReplayList;
 		const auto selected = list->getSelected();
 		if(selected == -1)
-			return;
+			return false;
 		const auto path = Utils::ToPathString(list->getListItem(selected, true));
 		if(!replay.OpenReplay(path) || (replay.IsOldReplayMode() && (!mainGame->coreloaded || !replay.CanBePlayedInOldMode())))
-			return;
+			return false;
 	}
 	if(mainGame->chkYrp->isChecked() && !replay.yrp)
-		return;
+		return false;
 	replay.Rewind();
 	mainGame->ClearCardInfo();
+	mainGame->wMainMenu->setVisible(false);
 	mainGame->mTopMenu->setVisible(false);
 	mainGame->wCardImg->setVisible(true);
 	mainGame->wInfos->setVisible(true);
@@ -89,6 +91,7 @@ void MenuHandler::LoadReplay() {
 	if(start_turn == 1)
 		start_turn = 0;
 	ReplayMode::StartReplay(start_turn, (mainGame->chkYrp->isChecked() || replay.IsOldReplayMode()));
+	return true;
 }
 bool MenuHandler::OnEvent(const irr::SEvent& event) {
 	bool stopPropagation = false;

@@ -3673,9 +3673,11 @@ bool Game::TrySetDeck(std::string selectedDeck) {
 void Game::LaunchReplay(epro::path_string replay) {
 	open_file = true;
 	open_file_name = replay;
-	wMainMenu->setVisible(false);
-	GUIUtils::ClickButton(device, btnReplayMode);
-	menuHandler.LoadReplay();
+	if(!menuHandler.LoadReplay()) {
+		open_file = false;
+		replayFailed = true;
+		return;
+	}
 	// ReplayMode::Pause(true, false);
 	btnReplayStart->setVisible(true);
 	btnReplayPause->setVisible(false);

@@ -255,6 +255,8 @@ int edopro_main(const args_t& args) {
 			gJWrapper = joystick.get();
 			firstlaunch = false;
 			CheckArguments(args);
+			if(ygo::mainGame->replayFailed)
+				return EXIT_FAILURE;
 		}
 		reset = ygo::mainGame->MainLoop();
 		std::swap(data->tmp_device, ygo::mainGame->device);
