@@ -1,3 +1,8 @@
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <sstream>
 #include <nlohmann/json.hpp>
 #include <irrlicht.h>
@@ -1991,11 +1996,43 @@ bool Game::MainLoop() {
 	const irr::ITimer* timer = device->getTimer();
 	uint32_t cur_time = 0;
 	uint32_t prev_time = timer->getRealTime();
+	const char* offline_render_env = std::getenv("EDOPRO_OFFLINE_RENDER");
+	const bool offline_render = offline_render_env && offline_render_env[0] != '\0' && offline_render_env[0] != '0';
+	const char* frame_pipe_env = std::getenv("EDOPRO_FRAME_PIPE");
+	FILE* frame_pipe = nullptr;
+	if(frame_pipe_env && frame_pipe_env[0] != '\0' && frame_pipe_env[0] != '0') {
+		if(std::strcmp(frame_pipe_env, "-") == 0) {
+			frame_pipe = stdout;
+		} else {
+			frame_pipe = std::fopen(frame_pipe_env, "wb");
+		}
+	}
+	auto ParseEnvUint = [](const char* name, uint32_t fallback) {
+		const char* value = std::getenv(name);
+		if(!value || value[0] == '\0')
+			return fallback;
+		char* end = nullptr;
+		auto parsed = std::strtoul(value, &end, 10);
+		if(end == value)
+			return fallback;
+		if(parsed > std::numeric_limits<uint32_t>::max())
+			return fallback;
+		return static_cast<uint32_t>(parsed);
+	};
+	const uint32_t frame_crop_x = ParseEnvUint("EDOPRO_FRAME_CROP_X", 0);
+	const uint32_t frame_crop_y = ParseEnvUint("EDOPRO_FRAME_CROP_Y", 0);
+	const uint32_t frame_crop_w = ParseEnvUint("EDOPRO_FRAME_CROP_W", 0);
+	const uint32_t frame_crop_h = ParseEnvUint("EDOPRO_FRAME_CROP_H", 0);
+	bool was_offline_tick = false;
+	int64_t offline_time_remainder = 0;
 	float frame_counter = 0.0f;
 	int fps = 0;
 	bool was_connected = false;
 	bool update_prompted = false;
 	bool update_checked = false;
+	const bool can_render_to_texture = driver->queryFeature(irr::video::EVDF_RENDER_TO_TARGET);
+	irr::video::ITexture* capture_target = nullptr;
+	irr::core::dimension2d<irr::u32> capture_target_dim;
 	if(!driver->queryFeature(irr::video::EVDF_TEXTURE_NPOT)) {
 		auto SetClamp = [](irr::video::SMaterialLayer layer[irr::video::MATERIAL_MAX_TEXTURES]) {
 			layer[0].TextureWrapU = irr::video::ETC_CLAMP_TO_EDGE;
@@ -2042,10 +2079,21 @@ bool Game::MainLoop() {
 		}
 		gSoundManager->Tick();
 		fps++;
-		auto now = timer->getRealTime();
-		delta_time = now - prev_time;
-		prev_time = now;
-		cur_time += delta_time;
+		const bool offline_tick = offline_render && dInfo.isReplay;
+		if(offline_tick) {
+			offline_time_remainder += 1000;
+			delta_time = static_cast<uint32_t>(offline_time_remainder / 60);
+			offline_time_remainder %= 60;
+			cur_time += delta_time;
+		} else {
+			if(was_offline_tick)
+				prev_time = timer->getRealTime();
+			auto now = timer->getRealTime();
+			delta_time = now - prev_time;
+			prev_time = now;
+			cur_time += delta_time;
+		}
+		was_offline_tick = offline_tick;
 		gJWrapper->ProcessEvents();
 		bool resized = false;
 		auto size = driver->getScreenSize();
@@ -2066,6 +2114,18 @@ bool Game::MainLoop() {
 			UpdateAspectRatio();
 			should_refresh_hands = true;
 			OnResize();
+		}
+		const bool capture_active = frame_pipe && dInfo.isReplay;
+		if(capture_active) {
+			if(can_render_to_texture && (!capture_target || capture_target_dim != window_size)) {
+				if(capture_target)
+					driver->removeTexture(capture_target);
+				capture_target_dim = window_size;
+				capture_target = driver->addRenderTargetTexture(capture_target_dim, "frame_capture", irr::video::ECF_A8R8G8B8);
+			}
+		} else if(capture_target) {
+			driver->removeTexture(capture_target);
+			capture_target = nullptr;
 		}
 #ifdef YGOPRO_BUILD_DLL
 		if(coreJustLoaded && false) {
@@ -2089,6 +2149,8 @@ bool Game::MainLoop() {
 		atkframe += 0.1f * (float)delta_time * 60.0f / 1000.0f;
 		atkdy = (float)sin(atkframe);
 		driver->beginScene(true, true, irr::video::SColor(0, 0, 0, 0));
+		if(capture_active && capture_target)
+			driver->setRenderTarget(capture_target, irr::video::ECBF_COLOR | irr::video::ECBF_DEPTH, irr::video::SColor(0, 0, 0, 0));
 		gMutex.lock();
 		if(dInfo.isInDuel) {
 			if(dInfo.isReplay)
@@ -2193,7 +2255,49 @@ bool Game::MainLoop() {
 				stHintMsg->setText(gDataManager->GetSysString(1392).data());
 			}
 		}
+		if(capture_active && capture_target)
+			driver->setRenderTarget(nullptr, irr::video::ECBF_NONE);
 		driver->endScene();
+		if(frame_pipe && dInfo.isReplay) {
+			irr::video::IImage* shot = nullptr;
+			if(capture_target) {
+				shot = driver->createImage(capture_target, irr::core::position2d<irr::s32>(0, 0), capture_target->getSize());
+			} else {
+				shot = driver->createScreenShot();
+			}
+			if(shot) {
+				if(shot->getColorFormat() != irr::video::ECF_A8R8G8B8) {
+					auto* converted = driver->createImage(irr::video::ECF_A8R8G8B8, shot->getDimension());
+					if(converted) {
+						shot->copyTo(converted);
+						shot->drop();
+						shot = converted;
+					}
+				}
+				const auto dim = shot->getDimension();
+				const uint32_t width = dim.Width;
+				const uint32_t height = dim.Height;
+				uint32_t crop_x = std::min(frame_crop_x, width);
+				uint32_t crop_y = std::min(frame_crop_y, height);
+				uint32_t crop_w = frame_crop_w > 0 ? std::min(frame_crop_w, width - crop_x) : (width - crop_x);
+				uint32_t crop_h = frame_crop_h > 0 ? std::min(frame_crop_h, height - crop_y) : (height - crop_y);
+				const auto pitch = static_cast<size_t>(shot->getPitch());
+				const auto bytes_per_pixel = static_cast<size_t>(4);
+				const auto row_bytes = static_cast<size_t>(crop_w) * bytes_per_pixel;
+				const auto* base = static_cast<const unsigned char*>(shot->getData());
+				if(crop_w > 0 && crop_h > 0) {
+					if(crop_x == 0 && crop_y == 0 && crop_w == width && crop_h == height) {
+						std::fwrite(base, pitch, height, frame_pipe);
+					} else {
+						for(uint32_t row = 0; row < crop_h; ++row) {
+							const auto* row_ptr = base + (static_cast<size_t>(crop_y + row) * pitch) + (static_cast<size_t>(crop_x) * bytes_per_pixel);
+							std::fwrite(row_ptr, row_bytes, 1, frame_pipe);
+						}
+					}
+				}
+				shot->drop();
+			}
+		}
 		gMutex.unlock();
 		if(closeDuelWindow)
 			CloseDuelWindow();
@@ -2288,19 +2392,21 @@ bool Game::MainLoop() {
 				gClientUpdater->StartUnzipper(Game::UpdateUnzipBar, mainGame);
 			}
 		}
+		if(!offline_tick) {
 #if EDOPRO_MACOS
-		// Vsync is a lost cause on MacOS, emulate it by hadrcoding to 60 fps
-		int fpsLimit = gGameConfig->vsync ? 60 / gGameConfig->vsync : gGameConfig->maxFPS;
-		if(fpsLimit > 0) {
+			// Vsync is a lost cause on MacOS, emulate it by hadrcoding to 60 fps
+			int fpsLimit = gGameConfig->vsync ? 60 / gGameConfig->vsync : gGameConfig->maxFPS;
+			if(fpsLimit > 0) {
 #else
-		int fpsLimit = gGameConfig->maxFPS;
-		if(gGameConfig->maxFPS > 0 && !gGameConfig->vsync) {
+			int fpsLimit = gGameConfig->maxFPS;
+			if(gGameConfig->maxFPS > 0 && !gGameConfig->vsync) {
 #endif
-			int64_t delta = std::round(fps * (1000.0f / fpsLimit) - cur_time);
-			if(delta > 0) {
-				int64_t t = timer->getRealTime();
-				while((timer->getRealTime() - t) < delta) {
-					epro::this_thread::sleep_for(std::chrono::milliseconds(1));
+				int64_t delta = std::round(fps * (1000.0f / fpsLimit) - cur_time);
+				if(delta > 0) {
+					int64_t t = timer->getRealTime();
+					while((timer->getRealTime() - t) < delta) {
+						epro::this_thread::sleep_for(std::chrono::milliseconds(1));
+					}
 				}
 			}
 		}
@@ -2312,9 +2418,13 @@ bool Game::MainLoop() {
 				if(dInfo.time_left[dInfo.time_player])
 					dInfo.time_left[dInfo.time_player]--;
 		}
-		if(gGameConfig->maxFPS != -1)
+		if(!offline_tick && gGameConfig->maxFPS != -1)
 			epro::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
+	if(capture_target)
+		driver->removeTexture(capture_target);
+	if(frame_pipe && frame_pipe != stdout)
+		std::fclose(frame_pipe);
 	discord.UpdatePresence(DiscordWrapper::TERMINATE);
 	{
 		std::lock_guard<epro::mutex> lk(gMutex);
