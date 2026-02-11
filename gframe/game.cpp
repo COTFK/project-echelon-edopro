@@ -2258,7 +2258,7 @@ bool Game::MainLoop() {
 		if(capture_active && capture_target)
 			driver->setRenderTarget(nullptr, irr::video::ECBF_NONE);
 		driver->endScene();
-		if(frame_pipe && dInfo.isReplay) {
+		if(frame_pipe && dInfo.isReplay && dInfo.isInDuel && dInfo.isStarted) {
 			irr::video::IImage* shot = nullptr;
 			if(capture_target) {
 				shot = driver->createImage(capture_target, irr::core::position2d<irr::s32>(0, 0), capture_target->getSize());
