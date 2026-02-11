@@ -4,6 +4,7 @@
 #include "game.h"
 #include "single_mode.h"
 #include "fmt.h"
+#include <set>
 
 namespace ygo {
 	bool ReplayMode::ReadReplayResponse() {
@@ -37,6 +38,12 @@ namespace ygo {
 		mainGame->dInfo.team2 = ReplayMode::cur_yrp->GetPlayersCount(1);
 		if(!mainGame->dInfo.isRelay)
 			mainGame->dInfo.current_player[1] = mainGame->dInfo.team2 - 1;
+		
+		// Download all card images before starting the replay
+		std::set<uint32_t> card_codes;
+		CollectReplayCardCodes(card_codes);
+		DownloadReplayImages(card_codes);
+		
 		if (!StartDuel()) {
 			EndDuel();
 			return 0;

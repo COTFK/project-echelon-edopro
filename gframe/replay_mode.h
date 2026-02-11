@@ -9,6 +9,7 @@
 #include "replay.h"
 #include "core_utils.h"
 #include "RNG/mt19937.h"
+#include <set>
 
 namespace ygo {
 
@@ -34,6 +35,8 @@ public:
 	static Replay* cur_yrp;
 	
 public:
+	static void CollectReplayCardCodes(std::set<uint32_t>& card_codes);
+	static void DownloadReplayImages(const std::set<uint32_t>& card_codes);
 	static bool StartReplay(int skipturn, bool is_yrp);
 	static void StopReplay(bool is_exiting = false);
 	static void SwapField();

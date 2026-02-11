@@ -6,6 +6,10 @@
 #include "game.h"
 #include "single_mode.h"
 #include "sound_manager.h"
+#include "image_downloader.h"
+#include <set>
+#include <chrono>
+#include <thread>
 
 namespace ygo {
 
@@ -24,6 +28,125 @@ int ReplayMode::skip_turn = 0;
 int ReplayMode::current_step = 0;
 int ReplayMode::skip_step = 0;
 epro::thread ReplayMode::replay_thread;
+
+void ReplayMode::CollectReplayCardCodes(std::set<uint32_t>& card_codes) {
+	// Determine which replay to use
+	Replay* replay_to_scan = yrp ? cur_yrp : &cur_replay;
+	if(!replay_to_scan)
+		return;
+	
+	// Collect cards from decks
+	const auto& decks = replay_to_scan->GetPlayerDecks();
+	for(const auto& deck : decks) {
+		for(uint32_t code : deck.main_deck) {
+			if(code != 0)
+				card_codes.insert(code);
+		}
+		for(uint32_t code : deck.extra_deck) {
+			if(code != 0)
+				card_codes.insert(code);
+		}
+	}
+	
+	// Collect cards from rule cards
+	const auto& rule_cards = replay_to_scan->GetRuleCards();
+	for(uint32_t code : rule_cards) {
+		if(code != 0)
+			card_codes.insert(code);
+	}
+	
+	// Collect cards from replay packets (only for new replay format)
+	if(!yrp) {
+		const auto& packets = cur_replay.packets_stream;
+		for(const auto& packet : packets) {
+			const uint8_t* pbuf = packet.data();
+			switch(packet.message) {
+				case MSG_UPDATE_CARD: {
+					// Skip player, location, sequence
+					pbuf += 3;
+					// Read card data - the card code is at the beginning of the data
+					if(packet.buff_size() > 7) {
+						uint32_t flag = BufferIO::Read<uint32_t>(pbuf);
+						if(flag & QUERY_CODE) {
+							uint32_t code = BufferIO::Read<uint32_t>(pbuf);
+							if(code != 0)
+								card_codes.insert(code);
+						}
+					}
+					break;
+				}
+				case MSG_MOVE: {
+					uint32_t code = BufferIO::Read<uint32_t>(pbuf);
+					if(code != 0)
+						card_codes.insert(code);
+					break;
+				}
+				case MSG_UPDATE_DATA: {
+					// Skip player and location
+					pbuf += 2;
+					// Read card data
+					if(packet.buff_size() > 6) {
+						uint32_t flag = BufferIO::Read<uint32_t>(pbuf);
+						if(flag & QUERY_CODE) {
+							uint32_t code = BufferIO::Read<uint32_t>(pbuf);
+							if(code != 0)
+								card_codes.insert(code);
+						}
+					}
+					break;
+				}
+				case MSG_DRAW:
+				case MSG_CONFIRM_CARDS:
+				case MSG_SHUFFLE_DECK:
+				case MSG_SHUFFLE_HAND:
+				case MSG_SHUFFLE_EXTRA:
+				case MSG_CONFIRM_DECKTOP:
+				case MSG_CONFIRM_EXTRATOP: {
+					// These messages may contain card codes, but parsing them correctly
+					// requires more complex logic. For now, we rely on MSG_UPDATE_CARD
+					// and MSG_MOVE which should capture all cards that appear in the replay.
+					break;
+				}
+			}
+		}
+	}
+}
+
+void ReplayMode::DownloadReplayImages(const std::set<uint32_t>& card_codes) {
+	if(!gImageDownloader || card_codes.empty())
+		return;
+	
+	// Queue all cards for download
+	for(uint32_t code : card_codes) {
+		gImageDownloader->AddToDownloadQueue(code, imgType::ART);
+	}
+	
+	// Wait for downloads to complete or timeout (30 seconds max)
+	const int max_wait_time_ms = 30000;
+	const int check_interval_ms = 100;
+	int elapsed_time = 0;
+	
+	while(elapsed_time < max_wait_time_ms) {
+		bool all_done = true;
+		int downloading_count = 0;
+		
+		for(uint32_t code : card_codes) {
+			auto status = gImageDownloader->GetDownloadStatus(code, imgType::ART);
+			if(status == ImageDownloader::downloadStatus::DOWNLOADING) {
+				all_done = false;
+				downloading_count++;
+			} else if(status == ImageDownloader::downloadStatus::NONE) {
+				all_done = false;
+			}
+		}
+		
+		if(all_done)
+			break;
+		
+		std::this_thread::sleep_for(std::chrono::milliseconds(check_interval_ms));
+		elapsed_time += check_interval_ms;
+	}
+}
 
 bool ReplayMode::StartReplay(int skipturn, bool is_yrp) {
 	if(mainGame->dInfo.isReplay)
@@ -105,6 +228,12 @@ int ReplayMode::ReplayThread() {
 		EndDuel();
 		return 0;
 	}
+	
+	// Download all card images before starting the replay
+	std::set<uint32_t> card_codes;
+	CollectReplayCardCodes(card_codes);
+	DownloadReplayImages(card_codes);
+	
 	mainGame->dInfo.isInDuel = true;
 	mainGame->dInfo.isStarted = true;
 	mainGame->dInfo.checkRematch = false;
