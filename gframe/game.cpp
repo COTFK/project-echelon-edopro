@@ -44,6 +44,7 @@
 #include "file_stream.h"
 #include "porting.h"
 #include "fmt.h"
+#include "offline_audio_mixer.h"
 
 #if EDOPRO_ANDROID || EDOPRO_IOS
 #include "CGUICustomComboBox/CGUICustomComboBox.h"
@@ -2000,6 +2001,10 @@ bool Game::MainLoop() {
 	const bool offline_render = offline_render_env && offline_render_env[0] != '\0' && offline_render_env[0] != '0';
 	const char* frame_pipe_env = std::getenv("EDOPRO_FRAME_PIPE");
 	FILE* frame_pipe = nullptr;
+
+	// previous capture_active state to start/stop audio
+	bool prev_capture_active = false;
+	// Video pipe: opened once before the loop, closed once after (original behavior)
 	if(frame_pipe_env && frame_pipe_env[0] != '\0' && frame_pipe_env[0] != '0') {
 		if(std::strcmp(frame_pipe_env, "-") == 0) {
 			frame_pipe = stdout;
@@ -2116,6 +2121,11 @@ bool Game::MainLoop() {
 			OnResize();
 		}
 		const bool capture_active = frame_pipe && dInfo.isReplay;
+
+		// Start/stop offline audio pipe on replay transitions
+		if(capture_active != prev_capture_active)
+			ygo::OfflineAudioMixer::Instance().OnCaptureActiveChanged(capture_active);
+		prev_capture_active = capture_active;
 		if(capture_active) {
 			if(can_render_to_texture && (!capture_target || capture_target_dim != window_size)) {
 				if(capture_target)
@@ -2259,6 +2269,8 @@ bool Game::MainLoop() {
 			driver->setRenderTarget(nullptr, irr::video::ECBF_NONE);
 		driver->endScene();
 		if(frame_pipe && dInfo.isReplay && dInfo.isInDuel && dInfo.isStarted) {
+			// Mix audio for this frame and write to offline audio pipe
+			ygo::OfflineAudioMixer::Instance().MixForMillis(delta_time);
 			irr::video::IImage* shot = nullptr;
 			if(capture_target) {
 				shot = driver->createImage(capture_target, irr::core::position2d<irr::s32>(0, 0), capture_target->getSize());
@@ -2425,6 +2437,8 @@ bool Game::MainLoop() {
 		driver->removeTexture(capture_target);
 	if(frame_pipe && frame_pipe != stdout)
 		std::fclose(frame_pipe);
+	// Ensure audio mixer is closed on exit
+	ygo::OfflineAudioMixer::Instance().OnCaptureActiveChanged(false);
 	discord.UpdatePresence(DiscordWrapper::TERMINATE);
 	{
 		std::lock_guard<epro::mutex> lk(gMutex);

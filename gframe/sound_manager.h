@@ -162,6 +162,10 @@ private:
 	void RefreshBGMDir(epro::path_stringview path, BGM scene);
 	bool soundsEnabled{ false };
 	bool musicEnabled{ false };
+	bool offlineRender{ false };
+	std::string offlineMusicFile;
+	double current_sound_volume{1.0};
+	double current_music_volume{1.0};
 	std::string working_dir{ "./" };
 	bool currentlyLooping{ false };
 };

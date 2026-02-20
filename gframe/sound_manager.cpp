@@ -18,6 +18,7 @@
 #if defined(YGOPRO_USE_MINIAUDIO)
 #include "SoundBackends/miniaudio/sound_miniaudio.h"
 #endif
+#include "offline_audio_mixer.h"
 
 namespace ygo {
 namespace {
@@ -64,6 +65,10 @@ SoundManager::SoundManager(double sounds_volume, double music_volume, bool sound
 	working_dir = Utils::ToUTF8IfNeeded(Utils::GetWorkingDirectory());
 	soundsEnabled = sounds_enabled;
 	musicEnabled = music_enabled;
+	current_sound_volume = sounds_volume;
+	current_music_volume = music_volume;
+	const char* offline_env = std::getenv("EDOPRO_OFFLINE_RENDER");
+	offlineRender = offline_env && offline_env[0] != '\0' && offline_env[0] != '0';
 	try {
 		auto tmp_mixer = make_backend(backend);
 		if(!tmp_mixer) {
@@ -199,7 +204,11 @@ void SoundManager::PlaySoundEffect(SFX sound) {
 	if(sound >= SFX::SFX_TOTAL_SIZE) return;
 	const auto& soundfile = SFXList[sound];
 	if(soundfile.empty()) return;
-	mixer->PlaySound(soundfile);
+	if(offlineRender) {
+		ygo::OfflineAudioMixer::Instance().PlaySoundFile(soundfile, false, static_cast<float>(current_sound_volume));
+	} else {
+		mixer->PlaySound(soundfile);
+	}
 }
 void SoundManager::PlayBGM(BGM scene, bool loop) {
 	if(!IsUsable())
@@ -210,14 +219,19 @@ void SoundManager::PlayBGM(BGM scene, bool loop) {
 	auto count = static_cast<int>(list.size());
 	if(count == 0)
 		return;
-	if(scene != bgm_scene || !mixer->MusicPlaying()) {
+	if(scene != bgm_scene || (offlineRender ? offlineMusicFile.empty() : !mixer->MusicPlaying())) {
 		bgm_scene = scene;
 		auto bgm = (std::uniform_int_distribution<>(0, count - 1))(rnd);
 		const std::string BGMName = epro::format("{}/./sound/BGM/{}", working_dir, list[bgm]);
-		if(!mixer->PlayMusic(BGMName, loop)) {
-			// music failed to load, directly remove it from the list
-			currentlyLooping = loop;
-			list.erase(std::next(list.begin(), bgm));
+		if(offlineRender) {
+			offlineMusicFile = BGMName;
+			ygo::OfflineAudioMixer::Instance().PlaySoundFile(BGMName, loop, static_cast<float>(current_music_volume));
+		} else {
+			if(!mixer->PlayMusic(BGMName, loop)) {
+				// music failed to load, directly remove it from the list
+				currentlyLooping = loop;
+				list.erase(std::next(list.begin(), bgm));
+			}
 		}
 	} else if(loop != currentlyLooping) {
 		currentlyLooping = loop;
@@ -232,18 +246,25 @@ bool SoundManager::PlayChant(CHANT chant, uint32_t code) {
 	auto chant_it = ChantsList.find(key);
 	if(chant_it == ChantsList.end())
 		return false;
+	if(offlineRender) {
+		ygo::OfflineAudioMixer::Instance().PlaySoundFile(chant_it->second, false, static_cast<float>(current_sound_volume));
+		return true;
+	}
 	return mixer->PlaySound(chant_it->second);
 }
 void SoundManager::SetSoundVolume(double volume) {
+	current_sound_volume = volume;
 	if(!IsUsable())
 		return;
 	mixer->SetSoundVolume(volume);
 }
 void SoundManager::SetMusicVolume(double volume) {
+	current_music_volume = volume;
 	if(!IsUsable())
 		return;
 	mixer->SetMusicVolume(volume);
 }
+
 void SoundManager::EnableSounds(bool enable) {
 	if(!IsUsable())
 		return;
@@ -259,11 +280,13 @@ void SoundManager::EnableMusic(bool enable) {
 void SoundManager::StopSounds() {
 	if(!IsUsable())
 		return;
+	offlineMusicFile.clear();
 	mixer->StopSounds();
 }
 void SoundManager::StopMusic() {
 	if(!IsUsable())
 		return;
+	offlineMusicFile.clear();
 	mixer->StopMusic();
 }
 void SoundManager::PauseMusic(bool pause) {
