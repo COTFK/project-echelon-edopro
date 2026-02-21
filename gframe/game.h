@@ -670,6 +670,7 @@ public:
 	uint16_t linePatternGL;
 	float waitFrame;
 	uint32_t signalFrame;
+	double replay_game_speed;  // Scales wait delays between game actions (not animations)
 	bool saveReplay;
 	int showcard;
 	uint32_t showcardcode;

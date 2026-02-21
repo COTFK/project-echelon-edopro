@@ -23,6 +23,21 @@ void OfflineAudioMixer::StartPipe(const char* path) {
 	pipe = (std::strcmp(path, "-") == 0) ? stdout : std::fopen(path, "wb");
 	frac_accum = 0.0;
 	active.clear();
+
+	// Parse game speed multiplier for audio scaling.
+	// - Speed up (> 1.0): apply inverse scaling (divide), game loop already scaled
+	// - Normal/Slow (<=1.0): no scaling, audio at normal rate
+	const char* gs = std::getenv("EDOPRO_GAME_SPEED");
+	if(gs && gs[0] != '\0') {
+		char* endptr = nullptr;
+		double parsed = std::strtod(gs, &endptr);
+		if(endptr != gs && parsed > 0.0)
+			game_speed = parsed;
+		else
+			game_speed = 1.0;
+	} else {
+		game_speed = 1.0;
+	}
 }
 
 void OfflineAudioMixer::StopPipe() {
@@ -121,7 +136,16 @@ void OfflineAudioMixer::PlaySoundFile(const std::string& filename, bool loop, fl
 void OfflineAudioMixer::MixForMillis(uint32_t delta_ms) {
 	if(!pipe || delta_ms == 0) return;
 
-	const double samples_f = static_cast<double>(target_sample_rate) * delta_ms / 1000.0;
+	// Hybrid audio scaling:
+	// - Speed up (> 1.0): loop scales delta_ms, apply inverse scaling (divide) to audio
+	// - Normal/Slow (<= 1.0): no audio scaling, capture at normal rate
+	double effective_ms = static_cast<double>(delta_ms);
+	if(game_speed > 1.0) {
+		effective_ms = effective_ms / game_speed;
+	}
+
+	const double samples_f = static_cast<double>(target_sample_rate) * effective_ms / 1000.0;
+
 	const auto   samples_i = static_cast<size_t>(std::floor(samples_f + frac_accum));
 	frac_accum += samples_f - static_cast<double>(samples_i);
 	if(samples_i == 0) return;

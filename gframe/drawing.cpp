@@ -1176,7 +1176,13 @@ void Game::PopupElement(irr::gui::IGUIElement * element, int hideframe) {
 	else ShowElement(element, hideframe);
 }
 void Game::WaitFrameSignal(int frame, std::unique_lock<epro::mutex>& _lck) {
-	signalFrame = (gGameConfig->quick_animation && frame >= 12) ? 12 * 1000 / 60 : frame * 1000 / 60;
+	int effective_frame = (gGameConfig->quick_animation && frame >= 12) ? 12 : frame;
+	// Hybrid delay scaling:
+	// - Speed up (> 1.0): delays handled by scaled loop, use normal frame calculation
+	// - Normal (== 1.0): normal frame calculation
+	// - Slow down (< 1.0): extend delays without scaling animations
+	double scaled_frame = (replay_game_speed < 1.0) ? effective_frame / replay_game_speed : effective_frame;
+	signalFrame = static_cast<uint32_t>(std::lround(scaled_frame * 1000.0 / 60.0));
 	frameSignal.Wait(_lck);
 }
 void Game::DrawThumb(const CardDataC* cp, irr::core::vector2di pos, LFList* lflist, bool drag, const irr::core::recti* cliprect, bool load_image) {

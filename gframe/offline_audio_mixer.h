@@ -54,6 +54,8 @@ private:
 
 	FILE*  pipe{nullptr};
 	double frac_accum{0.0};
+	// Game speed multiplier read from EDOPRO_GAME_SPEED. Default 1.0.
+	double game_speed{1.0};
 };
 
 } // namespace ygo

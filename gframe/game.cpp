@@ -2002,6 +2002,19 @@ bool Game::MainLoop() {
 	const char* frame_pipe_env = std::getenv("EDOPRO_FRAME_PIPE");
 	FILE* frame_pipe = nullptr;
 
+	// Optional game speed multiplier for offline replays. Default 1.0 (real-time).
+	// Values >1.0 compress wait delays between game actions (animations still play normally),
+	// values <1.0 extend wait delays. This only affects pauses, not animation speed.
+	const char* game_speed_env = std::getenv("EDOPRO_GAME_SPEED");
+	double game_speed = 1.0;
+	if(game_speed_env && game_speed_env[0] != '\0') {
+		char* endptr = nullptr;
+		double parsed = std::strtod(game_speed_env, &endptr);
+		if(endptr != game_speed_env && parsed > 0.0)
+			game_speed = parsed;
+	}
+	mainGame->replay_game_speed = game_speed;
+
 	// previous capture_active state to start/stop audio
 	bool prev_capture_active = false;
 	// Video pipe: opened once before the loop, closed once after (original behavior)
@@ -2086,7 +2099,14 @@ bool Game::MainLoop() {
 		fps++;
 		const bool offline_tick = offline_render && dInfo.isReplay;
 		if(offline_tick) {
-			offline_time_remainder += 1000;
+			// Hybrid speed scaling:
+			// - Speed up (> 1.0): scale entire simulation to prevent animation overlap
+			// - Normal (== 1.0): no scaling
+			// - Slow down (< 1.0): keep animations at 1x, extend action delays via WaitFrameSignal()
+			int64_t increment_ms = (replay_game_speed > 1.0) 
+				? static_cast<int64_t>(std::lround(1000.0 * replay_game_speed))
+				: 1000;
+			offline_time_remainder += increment_ms;
 			delta_time = static_cast<uint32_t>(offline_time_remainder / 60);
 			offline_time_remainder %= 60;
 			cur_time += delta_time;
