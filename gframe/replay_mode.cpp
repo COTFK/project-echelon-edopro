@@ -10,6 +10,7 @@
 #include <set>
 #include <chrono>
 #include <thread>
+#include <cstdlib>
 
 namespace ygo {
 
@@ -238,6 +239,14 @@ int ReplayMode::ReplayThread() {
 	mainGame->dInfo.isStarted = true;
 	mainGame->dInfo.checkRematch = false;
 	mainGame->SetMessageWindow();
+
+	// If the server requested a swapped replay view, apply it now.
+	{
+		const char* _swap_env = std::getenv("EDOPRO_REPLAY_SWAP");
+		if(_swap_env && _swap_env[0] && (_swap_env[0] == '1' || _swap_env[0] == 't' || _swap_env[0] == 'T')) {
+			mainGame->dField.ReplaySwap();
+		}
+	}
 	mainGame->dInfo.turn = 0;
 	mainGame->dInfo.isCatchingUp = (skip_turn > 0);
 	is_continuing = true;
