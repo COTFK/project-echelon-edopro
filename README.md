@@ -1,6 +1,6 @@
 # [Project Ignis](https://github.com/ProjectIgnis): EDOPro (Echelon fork)
 
-A custom fork of EDOPro, used by [Project Echelon](https://git.arqalite.org/COTFK/project-echelon).
+A custom fork of EDOPro, used by [Project Echelon](https://github.com/COTFK/project-echelon).
 
 **This fork is not meant to be used for actual play - it has not been tested for that purpose and might contain bugs.**
 
