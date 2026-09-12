@@ -17,9 +17,16 @@
 namespace irr {
 namespace gui {
 
-static bool hasNPotSupport(irr::video::IVideoDriver* driver) {
-	static const bool supported = driver->queryFeature(irr::video::EVDF_TEXTURE_NPOT);
-	return supported;
+static bool isGLES(irr::video::IVideoDriver* driver) {
+#if (IRRLICHT_VERSION_MAJOR==1 && IRRLICHT_VERSION_MINOR==9)
+	static const bool gles = [driver] {
+		auto driver_type = driver->getDriverType();
+		return driver_type == irr::video::EDT_OGLES1 || driver_type == irr::video::EDT_OGLES2;
+	}();
+	return gles;
+#else
+	return false;
+#endif
 }
 
 void Draw2DImageRotation(video::IVideoDriver* driver, video::ITexture* image, core::rect<s32> sourceRect,
@@ -66,7 +73,7 @@ void Draw2DImageRotation(video::IVideoDriver* driver, video::ITexture* image, co
 	material.ZWriteEnable = false;
 #endif
 	material.TextureLayer[0].Texture = image;
-	if(!hasNPotSupport(driver)) {
+	if(isGLES(driver)) {
 		material.TextureLayer[0].TextureWrapU = video::ETC_CLAMP_TO_EDGE;
 		material.TextureLayer[0].TextureWrapV = video::ETC_CLAMP_TO_EDGE;
 	}
@@ -114,7 +121,7 @@ void Draw2DImageQuad(video::IVideoDriver* driver, video::ITexture* image, core::
 	material.ZWriteEnable = false;
 #endif
 	material.TextureLayer[0].Texture = image;
-	if(!hasNPotSupport(driver)) {
+	if(isGLES(driver)) {
 		material.TextureLayer[0].TextureWrapU = video::ETC_CLAMP_TO_EDGE;
 		material.TextureLayer[0].TextureWrapV = video::ETC_CLAMP_TO_EDGE;
 	}
@@ -439,7 +446,7 @@ void CGUIImageButton::setImage(video::ITexture* image) {
 	if(image) {
 		ImageRect = core::rect<s32>(core::vector2d<s32>(0, 0), image->getOriginalSize());
 		if(isFixedSize)
-			imageScale = core::vector2df((irr::f32)imageSize.Width / image->getSize().Width, (irr::f32)imageSize.Height / image->getSize().Height);
+			imageScale = core::vector2df((irr::f32)imageSize.Width / image->getOriginalSize().Width, (irr::f32)imageSize.Height / image->getOriginalSize().Height);
 	}
 
 	if(!PressedImage)

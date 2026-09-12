@@ -1,10 +1,46 @@
 #ifdef YGOPRO_USE_SDL_MIXER3
 #include "sound_sdlmixer3.h"
-#include "../../fmt.h"
-#include <stdexcept>
-#include <SDL3_mixer/SDL_mixer.h>
-#include "../../epro_thread.h"
+
 #include <atomic>
+#include <map>
+#include <stdexcept>
+#include <string>
+
+#include <SDL3_mixer/SDL_mixer.h>
+
+#include "../../fmt.h"
+#include "../../epro_thread.h"
+
+class SoundMixer3Base final : public SoundBackend {
+public:
+	SoundMixer3Base();
+	~SoundMixer3Base() override;
+	void SetSoundVolume(double volume) override;
+	void SetMusicVolume(double volume) override;
+	bool PlayMusic(const std::string& name, bool loop) override;
+	bool PlaySound(const std::string& name) override;
+	void StopSounds() override;
+	void StopMusic() override;
+	void PauseMusic(bool pause) override;
+	void LoopMusic(bool loop) override;
+	bool MusicPlaying() override;
+	void Tick() override;
+private:
+	MIX_Audio* getCachedSound(const std::string& path);
+	MIX_Track* createAudioTrack(const std::string& path);
+	std::string cur_music;
+	std::map<std::string, MIX_Audio*> cached_sounds;
+	std::vector<MIX_Track*> playing_sounds;
+	MIX_Track* music_track;
+	MIX_Mixer* mixer;
+	float sound_volume;
+	uint64_t loop_properties;
+};
+
+template<>
+std::unique_ptr<SoundBackend> SoundBackendHelper<SoundMixer3Base>::make_ptr() {
+	return std::make_unique<SoundMixer3Base>();
+}
 
 SoundMixer3Base::SoundMixer3Base() : mixer(nullptr), sound_volume(1.0f), loop_properties(0) {
 	static_assert(sizeof(loop_properties) >= sizeof(SDL_PropertiesID));
@@ -57,15 +93,14 @@ bool SoundMixer3Base::PlayMusic(const std::string& name, bool loop) {
 	return true;
 }
 MIX_Audio* SoundMixer3Base::getCachedSound(const std::string& path) {
-	auto it = cached_sounds.find(path);
-	if(it != cached_sounds.end())
+	if(auto it = cached_sounds.find(path); it != cached_sounds.end()) {
 		return it->second;
+	}
 	auto* audio = MIX_LoadAudio(mixer, path.data(), false);
 	if(!audio) {
 		return nullptr;
 	}
-	cached_sounds.emplace(path, audio);
-	MIX_DestroyAudio(audio);
+	return cached_sounds.emplace(path, audio).first->second;
 }
 MIX_Track* SoundMixer3Base::createAudioTrack(const std::string& path) {
 	auto* sound = getCachedSound(path);
@@ -110,11 +145,7 @@ void SoundMixer3Base::PauseMusic(bool pause) {
 void SoundMixer3Base::LoopMusic(bool loop) {
 	if(!MusicPlaying())
 		return;
-	// ugly, but wathever
-	/*Mix_PauseMusic();
-	auto position = Mix_GetMusicPosition(music);
-	Mix_PlayMusic(music, loop ? -1 : 0);
-	Mix_SetMusicPosition(position);*/
+	MIX_SetTrackLoops(music_track, loop ? -1 : 0);
 }
 bool SoundMixer3Base::MusicPlaying() {
 	return MIX_GetTrackRemaining(music_track) != 0;

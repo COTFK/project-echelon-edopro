@@ -153,7 +153,7 @@ void DuelClient::ConnectTimeout([[maybe_unused]] evutil_socket_t fd, [[maybe_unu
 	if(!is_closing) {
 		temp_ver = 0;
 		std::lock_guard<epro::mutex> lock(mainGame->gMutex);
-		mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+		mainGame->btnCreateHost->setEnabled(true);
 		mainGame->btnJoinHost->setEnabled(true);
 		mainGame->btnJoinCancel->setEnabled(true);
 		if(mainGame->isHostingOnline) {
@@ -366,7 +366,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 		if(connect_state == 0x1) {
 			temp_ver = 0;
 			std::lock_guard<epro::mutex> lock(mainGame->gMutex);
-			mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+			mainGame->btnCreateHost->setEnabled(true);
 			mainGame->btnJoinHost->setEnabled(true);
 			mainGame->btnJoinCancel->setEnabled(true);
 			if(mainGame->isHostingOnline) {
@@ -380,7 +380,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 		} else if(connect_state == 0x7) {
 			if(!mainGame->dInfo.isInDuel && !mainGame->is_building) {
 				std::lock_guard<epro::mutex> lock(mainGame->gMutex);
-				mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+				mainGame->btnCreateHost->setEnabled(true);
 				mainGame->btnJoinHost->setEnabled(true);
 				mainGame->btnJoinCancel->setEnabled(true);
 				mainGame->HideElement(mainGame->wCreateHost);
@@ -404,7 +404,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 				}
 				std::unique_lock<epro::mutex> lock(mainGame->gMutex);
 				mainGame->PopupMessage(gDataManager->GetSysString(1502));
-				mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+				mainGame->btnCreateHost->setEnabled(true);
 				mainGame->btnJoinHost->setEnabled(true);
 				mainGame->btnJoinCancel->setEnabled(true);
 				mainGame->stTip->setVisible(false);
@@ -448,7 +448,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 #undef HIDE_AND_CHECK
 				mainGame->ShowElement(mainGame->wRoomListPlaceholder);
 			} else {
-				mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+				mainGame->btnCreateHost->setEnabled(true);
 				mainGame->btnJoinHost->setEnabled(true);
 				mainGame->btnJoinCancel->setEnabled(true);
 			}
@@ -561,7 +561,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 			if(temp_ver || (_pkt.type == ERROR_TYPE::VERERROR2)) {
 				temp_ver = 0;
 				std::lock_guard<epro::mutex> lock(mainGame->gMutex);
-				mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+				mainGame->btnCreateHost->setEnabled(true);
 				mainGame->btnJoinHost->setEnabled(true);
 				mainGame->btnJoinCancel->setEnabled(true);
 				mainGame->btnHostConfirm->setEnabled(true);
@@ -581,7 +581,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 #undef HIDE_AND_CHECK
 					mainGame->ShowElement(mainGame->wRoomListPlaceholder);
 				} else {
-					mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+					mainGame->btnCreateHost->setEnabled(true);
 				}
 			} else {
 				temp_ver = _pkt.code;
@@ -1048,7 +1048,7 @@ void DuelClient::HandleSTOCPacketLanAsync(const std::vector<uint8_t>& data) {
 			mainGame->is_building = false;
 			mainGame->is_siding = false;
 			mainGame->wDeckEdit->setVisible(false);
-			mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+			mainGame->btnCreateHost->setEnabled(true);
 			mainGame->btnJoinHost->setEnabled(true);
 			mainGame->btnJoinCancel->setEnabled(true);
 			mainGame->stTip->setVisible(false);
@@ -1375,7 +1375,7 @@ int DuelClient::ClientAnalyze(const uint8_t* msg, uint32_t len) {
 				mainGame->dInfo.isInDuel = false;
 				mainGame->dInfo.checkRematch = false;
 				mainGame->dInfo.isStarted = false;
-				mainGame->btnCreateHost->setEnabled(mainGame->coreloaded);
+				mainGame->btnCreateHost->setEnabled(true);
 				mainGame->btnJoinHost->setEnabled(true);
 				mainGame->btnJoinCancel->setEnabled(true);
 				mainGame->stTip->setVisible(false);
@@ -2140,7 +2140,7 @@ int DuelClient::ClientAnalyze(const uint8_t* msg, uint32_t len) {
 		mainGame->dField.activatable_descs.clear();
 		mainGame->dField.conti_cards.clear();
 		for(uint32_t i = 0; i < count; ++i) {
-			uint8_t flag;
+			uint8_t flag{};
 			if(mainGame->dInfo.compat_mode) {
 				flag = BufferIO::Read<uint8_t>(pbuf);
 				mainGame->dField.chain_forced = (BufferIO::Read<uint8_t>(pbuf) != 0) || mainGame->dField.chain_forced;
@@ -2557,7 +2557,8 @@ int DuelClient::ClientAnalyze(const uint8_t* msg, uint32_t len) {
 		uint32_t code;
 		ClientCard* pcard;
 		mainGame->dField.selectable_cards.clear();
-		for(auto it = mainGame->dField.extra[player].crbegin(), end = it + count; it != end; ++it) {
+		const auto backit = mainGame->dField.extra[player].crbegin() + mainGame->dField.extra_p_count[player];
+		for(auto it = backit, end = it + count; it != end; ++it) {
 			code = BufferIO::Read<uint32_t>(pbuf);
 			pbuf += (mainGame->dInfo.compat_mode) ? 3 : 6;
 			pcard = *it;
@@ -2567,7 +2568,7 @@ int DuelClient::ClientAnalyze(const uint8_t* msg, uint32_t len) {
 		if(mainGame->dInfo.isCatchingUp)
 			return true;
 		mainGame->AddLog(epro::sprintf(gDataManager->GetSysString(207), count));
-		for(auto it = mainGame->dField.extra[player].crbegin(), end = it + count; it != end; ++it) {
+		for(auto it = backit, end = it + count; it != end; ++it) {
 			pcard = *it;
 			std::unique_lock<epro::mutex> lock(mainGame->gMutex);
 			mainGame->AddLog(epro::format(L"*[{}]", gDataManager->GetName(pcard->code)), pcard->code);
@@ -3947,7 +3948,10 @@ int DuelClient::ClientAnalyze(const uint8_t* msg, uint32_t len) {
 		std::unique_lock<epro::mutex> lock(mainGame->gMutex);
 		mainGame->ebANCard->setText(L"");
 		mainGame->wANCard->setText(gDataManager->GetDesc(select_hint ? select_hint : 564, mainGame->dInfo.compat_mode).data());
-		mainGame->dField.UpdateDeclarableList();
+		if(mainGame->dField.UpdateDeclarableList() == 0) {
+			DuelClient::SetResponseI(0);
+			return true;
+		}
 		mainGame->PopupElement(mainGame->wANCard);
 		select_hint = 0;
 		return false;

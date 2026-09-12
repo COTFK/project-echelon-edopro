@@ -9,7 +9,7 @@
 
 #if EDOPRO_WINDOWS
 #define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include <windows.h>
 #include <shellapi.h> // ShellExecute
 #include "utils_gui.h"
 
@@ -23,7 +23,7 @@
 #endif
 #endif //EDOPRO_WINDOWS
 
-#if EDOPRO_LINUX_KERNEL || EDOPRO_APPLE
+#if EDOPRO_POSIX
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -83,8 +83,10 @@ LONG NTAPI PvectoredExceptionHandler(EXCEPTION_POINTERS* ExceptionInfo) {
 inline void NameThreadMsvc(const char* threadName) {
 	const THREADNAME_INFO info{ 0x1000, threadName, static_cast<DWORD>(-1), 0 };
 	auto handle = AddVectoredExceptionHandler(1, PvectoredExceptionHandler);
-	RaiseException(MS_VC_EXCEPTION, 0, sizeof(info) / sizeof(ULONG_PTR), reinterpret_cast<const ULONG_PTR*>(&info));
-	RemoveVectoredExceptionHandler(handle);
+	if(handle) {
+		RaiseException(MS_VC_EXCEPTION, 0, sizeof(info) / sizeof(ULONG_PTR), reinterpret_cast<const ULONG_PTR*>(&info));
+		RemoveVectoredExceptionHandler(handle);
+	}
 }
 
 const auto PSetThreadDescription = [] {
@@ -183,7 +185,7 @@ namespace ygo {
 #elif EDOPRO_LINUX_KERNEL
 		pthread_setname_np(pthread_self(), name);
 #elif EDOPRO_APPLE
-		pthread_setname_np(name);
+		porting::nameThread(name);
 #endif //EDOPRO_WINDOWS
 	}
 
@@ -191,11 +193,7 @@ namespace ygo {
 		return epro::this_thread::get_id();
 	}
 
-#if !EDOPRO_ANDROID
-	static auto main_thread_id = Utils::GetCurrThreadId();
-#else
 	extern epro::thread::id main_thread_id;
-#endif
 
 	epro::thread::id Utils::GetMainThreadId() {
 		return main_thread_id;
@@ -241,7 +239,7 @@ namespace ygo {
 	epro::mutex last_error_strings_mutex;
 
 	std::string& last_error_string_() {
-		const auto id = epro::this_thread::get_id();
+		const auto id = Utils::GetCurrThreadId();
 		std::unique_lock<epro::mutex> lk{ last_error_strings_mutex };
 		auto it = last_error_strings.find(id);
 		if(it != last_error_strings.end())

@@ -8,6 +8,8 @@ BUILD_CONFIG=${BUILD_CONFIG:-release}
 TARGET_OS=${TARGET_OS:-$TRAVIS_OS_NAME}
 PLATFORM=${1:-$TARGET_OS}
 ARCH=${ARCH:-""}
+OBJCOPY="objcopy"
+STRIP="strip"
 
 function copy_if_exists {
     if [[ -f bin/$ARCH/$BUILD_CONFIG/$1 ]]; then
@@ -15,15 +17,33 @@ function copy_if_exists {
     fi
 }
 
+function copy_compressed_if_exists {
+    if [[ -f bin/$ARCH/$BUILD_CONFIG/$1 ]]; then
+		tar -Jcvf deploy/$1.tgx -C bin/$ARCH/$BUILD_CONFIG $1
+    fi
+}
+
 function compress_if_exist {
     if [[ -f bin/$ARCH/$BUILD_CONFIG/$1 ]]; then
-		./upx deploy/$1 -o deploy/compressed-$1
+		if [[ -n "${CV2PDB:-""}" ]]; then
+			# upx doesn't like binaries touched by cv2pdb
+			./upx deploy/$1 -o deploy/compressed-$1 --force
+		else
+			./upx deploy/$1 -o deploy/compressed-$1
+		fi
     fi
 }
 
 function strip_if_exists {
-    if [[ "$BUILD_CONFIG" == "release" ]] && [[ -f bin/$ARCH/$BUILD_CONFIG/$1 ]]; then
-        strip bin/$ARCH/$BUILD_CONFIG/$1
+    if [[ -f bin/$ARCH/$BUILD_CONFIG/$1 ]]; then
+		$OBJCOPY --only-keep-debug bin/$ARCH/$BUILD_CONFIG/$1 bin/$ARCH/$BUILD_CONFIG/$1.debug
+        $STRIP --strip-debug --strip-unneeded  bin/$ARCH/$BUILD_CONFIG/$1
+		$OBJCOPY --add-gnu-debuglink=bin/$ARCH/$BUILD_CONFIG/$1.debug bin/$ARCH/$BUILD_CONFIG/$1
+		tar -Jcvf deploy/$1.debug.tgx -C bin/$ARCH/$BUILD_CONFIG $1.debug
+		if [[ -n "${CV2PDB:-""}" ]]; then
+			PDBNAME=`echo "$1" | cut -d'.' -f1`.pdb
+			$CV2PDB -p$PDBNAME bin/$ARCH/$BUILD_CONFIG/$1
+		fi
     fi
 }
 
@@ -31,7 +51,7 @@ function bundle_if_exists {
     if [[ -f bin/$ARCH/$BUILD_CONFIG/$1.app ]]; then
         mkdir -p deploy/$1.app/Contents/MacOS
         # Binary seems to be incorrectly named with the current premake
-        cp bin/$ARCH/$BUILD_CONFIG/$1.app deploy/$1.app/Contents/MacOS/$1
+        cp bin/$ARCH/$BUILD_CONFIG/$1.app deploy/$1.app/Contents/MacOS/EDOPro
         # dylibbundler -x deploy/$1.app/Contents/MacOS/$1 -b -d deploy/$1.app/Contents/Frameworks/ -p @executable_path/../Frameworks/ -cd
 
         mkdir -p deploy/$1.app/Contents/Resources
@@ -53,6 +73,9 @@ function bundle_if_exists_ios {
         # Binary seems to be incorrectly named with the current premake
         cp bin/$ARCH/$BUILD_CONFIG/$1.app deploy/$1.app/$1
 
+        # Fakesign binary
+        ldid -S deploy/$1.app/$1
+
         cp -r ios-assets/* deploy/$1.app/
         cp gframe/ios-Info.plist deploy/$1.app/Info.plist
 
@@ -68,25 +91,36 @@ function bundle_if_exists_ios {
 mkdir -p deploy
 
 if [[ "$PLATFORM" == "windows" ]]; then
-	ARCH="."
-	copy_if_exists ocgcore.dll
+	if [[ "$ARCH" == "x86" ]] || [[ "$ARCH" == "win32" ]]; then
+		ARCH="."
+	fi
+	if [[ -n "${MINGW_LITE_VARIANT:-""}" ]]; then
+		strip_if_exists ygopro.exe
+	fi
 	copy_if_exists ygopro.exe
 	compress_if_exist ygopro.exe
+	copy_compressed_if_exists ygopro.pdb
+
+	if [[ -n "${MINGW_LITE_VARIANT:-""}" ]]; then
+		strip_if_exists ygoprodll.exe
+	fi
 	copy_if_exists ygoprodll.exe
 	compress_if_exist ygoprodll.exe
-	copy_if_exists ygoprodll.pdb
+	copy_compressed_if_exists ygoprodll.pdb
 fi
 if [[ "$PLATFORM" == "linux" ]]; then
-	copy_if_exists libocgcore.so
-	# strip_if_exists ygopro
+	if [[ "$ARCH" == "arm64" ]]; then
+		OBJCOPY="aarch64-linux-gnu-objcopy"
+		STRIP="aarch64-linux-gnu-strip"
+	fi
+	strip_if_exists ygopro
 	copy_if_exists ygopro
 	compress_if_exist ygopro
-	# strip_if_exists ygoprodll
+	strip_if_exists ygoprodll
 	copy_if_exists ygoprodll
 	compress_if_exist ygoprodll
 fi
 if [[ "$PLATFORM" == "macosx" ]]; then
-	copy_if_exists libocgcore.dylib
     # strip_if_exists discord-launcher
 	# strip_if_exists ygopro.app
 	bundle_if_exists ygopro
@@ -94,7 +128,6 @@ if [[ "$PLATFORM" == "macosx" ]]; then
 	bundle_if_exists ygoprodll
 fi
 if [[ "$PLATFORM" == "ios" ]]; then
-	copy_if_exists libocgcore.dylib
     # strip_if_exists discord-launcher
 	# strip_if_exists ygopro.app
 	bundle_if_exists_ios ygopro

@@ -10,7 +10,7 @@
 #include "localtime.h"
 #if EDOPRO_WINDOWS
 #define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include <windows.h>
 #include <vector>
 #include "logging.h"
 #include "Base64.h"
@@ -20,7 +20,6 @@ using CCursorControl = irr::CCursorControl;
 #endif
 #elif EDOPRO_MACOS
 #include <CoreFoundation/CoreFoundation.h>
-#include "osx_menu.h"
 #elif EDOPRO_LINUX
 #if !(IRRLICHT_VERSION_MAJOR==1 && IRRLICHT_VERSION_MINOR==9)
 #include <X11/Xlib.h>
@@ -150,8 +149,17 @@ std::shared_ptr<irr::IrrlichtDevice> GUIUtils::CreateDevice(GameConfig* configs)
 #if EDOPRO_ANDROID || EDOPRO_IOS
 	device->getGUIEnvironment()->setOSOperator(Utils::OSOperator);
 #endif
-#if EDOPRO_IOS_SIMULATOR
-	driver->disableFeature(irr::video::EVDF_TEXTURE_NPOT);
+#if (IRRLICHT_VERSION_MAJOR==1 && IRRLICHT_VERSION_MINOR==9)
+	if(auto driver_type = driver->getDriverType(); driver_type == irr::video::EDT_OGLES1 || driver_type == irr::video::EDT_OGLES2) {
+		auto& InitMaterial2D = driver->getMaterial2D();
+		for (auto& layer : InitMaterial2D.TextureLayer)
+		{
+			layer.TextureWrapU = irr::video::ETC_CLAMP_TO_EDGE;
+			layer.TextureWrapV = irr::video::ETC_CLAMP_TO_EDGE;
+			layer.TextureWrapW = irr::video::ETC_CLAMP_TO_EDGE;
+		}
+		driver->enableMaterial2D(true);
+	}
 #endif
 	driver->setTextureCreationFlag(irr::video::ETCF_CREATE_MIP_MAPS, false);
 	driver->setTextureCreationFlag(irr::video::ETCF_OPTIMIZED_FOR_QUALITY, true);
@@ -183,7 +191,7 @@ std::shared_ptr<irr::IrrlichtDevice> GUIUtils::CreateDevice(GameConfig* configs)
 	}
 #elif EDOPRO_MACOS
 	if(gGameConfig->windowStruct.size())
-		EDOPRO_SetWindowRect(driver->getExposedVideoData().OpenGLOSX.Window, gGameConfig->windowStruct.data());
+		porting::setWindowRect(driver->getExposedVideoData().OpenGLOSX.Window, gGameConfig->windowStruct.data());
 #endif
 	device->getLogger()->setLogLevel(irr::ELL_ERROR);
 	return std::shared_ptr<irr::IrrlichtDevice>(device, [](irr::IrrlichtDevice* ptr){
@@ -191,7 +199,7 @@ std::shared_ptr<irr::IrrlichtDevice> GUIUtils::CreateDevice(GameConfig* configs)
 	});
 }
 
-void GUIUtils::ChangeCursor(std::shared_ptr<irr::IrrlichtDevice>& device, /*irr::gui::ECURSOR_ICON*/ int _icon) {
+void GUIUtils::ChangeCursor(irr::IrrlichtDevice* device, /*irr::gui::ECURSOR_ICON*/ int _icon) {
 #if !EDOPRO_ANDROID && !EDOPRO_IOS
 	auto icon = static_cast<irr::gui::ECURSOR_ICON>(_icon);
 	auto cursor = device->getCursorControl();
@@ -201,7 +209,7 @@ void GUIUtils::ChangeCursor(std::shared_ptr<irr::IrrlichtDevice>& device, /*irr:
 #endif
 }
 
-bool GUIUtils::TakeScreenshot(std::shared_ptr<irr::IrrlichtDevice>& device) {
+bool GUIUtils::TakeScreenshot(irr::IrrlichtDevice* device) {
 	const auto driver = device->getVideoDriver();
 	const auto image = driver->createScreenShot();
 	if(!image)
@@ -215,10 +223,10 @@ bool GUIUtils::TakeScreenshot(std::shared_ptr<irr::IrrlichtDevice>& device) {
 	return written;
 }
 #if (IRRLICHT_VERSION_MAJOR==1 && IRRLICHT_VERSION_MINOR==9)
-void GUIUtils::ToggleFullscreen(std::shared_ptr<irr::IrrlichtDevice>& device, [[maybe_unused]] bool& fullscreen) {
+void GUIUtils::ToggleFullscreen(irr::IrrlichtDevice* device, [[maybe_unused]] bool& fullscreen) {
 #if EDOPRO_MACOS
-	EDOPRO_ToggleFullScreen();
-#elif EDOPRO_WINDOWS || EDOPRO_LINUX
+	porting::toggleFullScreen();
+#elif EDOPRO_WINDOWS || EDOPRO_LINUX || EDOPRO_HAIKU
 	device->toggleFullscreen(!std::exchange(fullscreen, !fullscreen));
 #endif
 }
@@ -232,9 +240,9 @@ static BOOL CALLBACK callback(HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM
 	return TRUE;
 }
 #endif
-void GUIUtils::ToggleFullscreen(std::shared_ptr<irr::IrrlichtDevice>& device, [[maybe_unused]] bool& fullscreen) {
+void GUIUtils::ToggleFullscreen(irr::IrrlichtDevice* device, [[maybe_unused]] bool& fullscreen) {
 #if EDOPRO_MACOS
-	EDOPRO_ToggleFullScreen();
+	porting::toggleFullScreen();
 #elif EDOPRO_WINDOWS
 	static WINDOWPLACEMENT nonFullscreenSize;
 	static LONG_PTR nonFullscreenStyle;
@@ -400,7 +408,7 @@ void GUIUtils::ToggleSwapInterval(irr::video::IVideoDriver* driver, int interval
 	SetSwapInterval(driver, interval);
 }
 
-std::string GUIUtils::SerializeWindowPosition(std::shared_ptr<irr::IrrlichtDevice>& device) {
+std::string GUIUtils::SerializeWindowPosition(irr::IrrlichtDevice* device) {
 #if EDOPRO_WINDOWS
 	auto hWnd = GetWindowHandle(device->getVideoDriver());
 	WINDOWPLACEMENT wp;
@@ -408,13 +416,13 @@ std::string GUIUtils::SerializeWindowPosition(std::shared_ptr<irr::IrrlichtDevic
 	GetWindowPlacement(hWnd, &wp);
 	return base64_encode<std::string>(reinterpret_cast<uint8_t*>(&wp), sizeof(wp));
 #elif EDOPRO_MACOS
-	return EDOPRO_GetWindowRect(device->getVideoDriver()->getExposedVideoData().OpenGLOSX.Window);
+	return porting::getWindowRect(device->getVideoDriver()->getExposedVideoData().OpenGLOSX.Window);
 #else
 	return std::string{};
 #endif
 }
 
-void GUIUtils::TriggerEvent(std::shared_ptr<irr::IrrlichtDevice>& device, irr::gui::IGUIElement* target, /*irr::gui::EGUI_EVENT_TYPE*/ int type) {
+void GUIUtils::TriggerEvent(irr::IrrlichtDevice* device, irr::gui::IGUIElement* target, /*irr::gui::EGUI_EVENT_TYPE*/ int type) {
 	irr::SEvent event;
 	event.EventType = irr::EET_GUI_EVENT;
 	event.GUIEvent.EventType = static_cast<irr::gui::EGUI_EVENT_TYPE>(type);
@@ -422,11 +430,11 @@ void GUIUtils::TriggerEvent(std::shared_ptr<irr::IrrlichtDevice>& device, irr::g
 	device->postEventFromUser(event);
 }
 
-void GUIUtils::ClickButton(std::shared_ptr<irr::IrrlichtDevice>& device, irr::gui::IGUIElement* btn) {
+void GUIUtils::ClickButton(irr::IrrlichtDevice* device, irr::gui::IGUIElement* btn) {
 	TriggerEvent(device, btn, irr::gui::EGET_BUTTON_CLICKED);
 }
 
-void GUIUtils::SetCheckbox(std::shared_ptr<irr::IrrlichtDevice>& device, irr::gui::IGUICheckBox* chk, bool state) {
+void GUIUtils::SetCheckbox(irr::IrrlichtDevice* device, irr::gui::IGUICheckBox* chk, bool state) {
 	chk->setChecked(state);
 	TriggerEvent(device, chk, irr::gui::EGET_CHECKBOX_CHANGED);
 }

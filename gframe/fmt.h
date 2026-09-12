@@ -3,6 +3,7 @@
 #ifdef _MSC_VER
 #define FMT_UNICODE 0
 #endif
+#define FMT_USE_CONSTEVAL 0
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -92,7 +93,22 @@ struct fmt::formatter<epro::Address, T> {
 
 namespace epro {
 using fmt::format;
+using fmt::formatter;
+using fmt::join;
+#if FMT_VERSION >= 120000
+template <typename... T>
+inline auto sprintf(fmt::string_view fmt, const T&... args) -> std::string {
+	return vsprintf(fmt, fmt::make_printf_args(args...));
+}
+// fmt 12 deprecated the wide overload of sprintf, use our own
+template <typename... T>
+inline auto sprintf(fmt::basic_string_view<wchar_t> fmt, const T&... args)
+-> std::wstring {
+	return vsprintf(fmt, fmt::make_printf_args<wchar_t>(args...));
+}
+#else
 using fmt::sprintf;
+#endif
 using fmt::print;
 using fmt::format_to_n;
 #if FMT_VERSION >= 60000

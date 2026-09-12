@@ -75,7 +75,11 @@ bool GitRepo::Sanitize() {
 // public
 
 RepoManager::RepoManager() {
-	git_libgit2_init();
+	if(!git_libgit2_init()) {
+		const auto err = git_error_last();
+		epro::print("failed to init libgit2: {}\n", err ? err->message : "Undefined error");
+		return;
+	}
 	if(gGameConfig->ssl_certificate_path.size() && Utils::FileExists(Utils::ToPathString(gGameConfig->ssl_certificate_path)))
 		git_libgit2_opts(GIT_OPT_SET_SSL_CERT_LOCATIONS, gGameConfig->ssl_certificate_path.data(), "");
 #if (LIBGIT2_VER_MAJOR>0 || LIBGIT2_VER_MINOR>23)
@@ -118,20 +122,20 @@ std::vector<const GitRepo*> RepoManager::GetReadyRepos() {
 	std::vector<const GitRepo*> res;
 	if(available_repos.empty())
 		return res;
-	auto it = available_repos.cbegin();
 	{
 		std::lock_guard<epro::mutex> lck(syncing_mutex);
-		for(; it != available_repos.cend(); it++) {
+		for(auto it = available_repos.crbegin(); it != available_repos.crend(); it++) {
 			//set internal_ready instead of ready as that's not thread safe
 			//and it'll be read synchronously from the main thread after calling
 			//GetAllRepos
-			if(!((*it)->ready = (*it)->internal_ready))
+			auto* repo = *it;
+			if(!(repo->ready = repo->internal_ready))
 				break;
-			res.push_back(*it);
+			res.push_back(repo);
 		}
 	}
 	if(res.size())
-		available_repos.erase(available_repos.cbegin(), it);
+		available_repos.resize(available_repos.size() - res.size());
 	//by design, once repositories are added at startup, no new ones are added
 	//so when they finish, the threads are no longer needed
 	if(available_repos.empty())

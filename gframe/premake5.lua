@@ -1,27 +1,16 @@
-local _includedirs=includedirs
-if _ACTION=="xcode4" then
-	_includedirs=sysincludedirs
-end
 local ygopro_config=function(static_core)
 	kind "WindowedApp"
 	cppdialect "C++17"
 	rtti "Off"
 	files { "**.cpp", "**.cc", "**.c", "**.h", "**.hpp" }
-	excludes { "lzma/**", "SoundBackends/**", "sfAudio/**", "Android/**" }
+	excludes { "lzma/**", "SoundBackends/**", "sfAudio/**", "Android/**", "OSX/**"  }
 	if _OPTIONS["oldwindows"] then
 		filter {'action:vs*'}
 			files { "../overwrites/overwrites.cpp", "../overwrites/loader.asm" }
 		filter { "files:**.asm", "action:vs*" }
 			exceptionhandling 'SEH'
 		filter {'action:not vs*'}
-			files { "../overwrites-mingw/overwrites.cpp", "../overwrites-mingw/loader.asm" }
-		filter {'files:**.asm', 'action:not vs*'}
-			buildmessage '%{file.relpath}'
-			buildoutputs { '%{cfg.objdir}/%{file.basename}_asm.o' }
-			buildcommands {
-				'nasm -f win32 -o "%{cfg.objdir}/%{file.basename}_asm.o" "%{file.relpath}"'
-			}
-		filter {}
+			files { "../overwrites-mingw/overwrites.cpp", "../overwrites-mingw/loader.s" }
 	end
 
 	filter { "action:not vs*" }
@@ -32,9 +21,12 @@ local ygopro_config=function(static_core)
 		buildmessage '%{file.relpath}'
 		buildoutputs { '%{cfg.objdir}/%{file.basename}_rc.o' }
 		buildcommands {
-			'windres -DMINGW "%{file.relpath}" -o "%{cfg.objdir}/%{file.basename}_rc.o"'
+			'$(RESCOMP) -D__MINGW32__ "%{file.relpath}" -o "%{cfg.objdir}/%{file.basename}_rc.o"'
 		}
 	filter {}
+	if not static_core then
+		defines "YGOPRO_BUILD_DLL"
+	end
 
 	defines "CURL_STATICLIB"
 	if _OPTIONS["pics"] then
@@ -75,7 +67,7 @@ local ygopro_config=function(static_core)
 	if next(sounds) ~= nil then
 		if sounds.irrklang then
 			defines "YGOPRO_USE_IRRKLANG"
-			_includedirs "../irrKlang/include"
+			externalincludedirs "../irrKlang/include"
 			files "SoundBackends/irrklang/**"
 			filter {}
 		end
@@ -84,12 +76,14 @@ local ygopro_config=function(static_core)
 			files "SoundBackends/sdlmixer/**"
 			filter "system:windows"
 				links { "version", "setupapi" }
-			filter { "system:not windows", "configurations:Debug" }
+			filter { "system:not windows", "system:not haiku", "configurations:Debug" }
 				links { "SDL2d" }
-			filter { "system:not windows", "configurations:Release" }
+			filter { "system:not windows", "configurations:Release or system:haiku" }
 				links { "SDL2" }
-			filter "system:not windows"
+			filter { "system:not windows", "system:not haiku" }
 				links { "SDL2_mixer", "FLAC", "mpg123", "vorbisfile", "vorbis", "ogg" }
+			filter "system:haiku"
+				links { "SDL2_mixer" }
 			filter "system:macosx"
 				links { "CoreAudio.framework", "AudioToolbox.framework", "CoreVideo.framework", "ForceFeedback.framework", "Carbon.framework" }
 			filter {}
@@ -99,9 +93,9 @@ local ygopro_config=function(static_core)
 			files "SoundBackends/sdlmixer3/**"
 			filter "system:windows"
 				links { "version", "setupapi" }
-			filter { "system:not windows", "configurations:Debug" }
+			filter { "system:not windows", "system:not haiku", "configurations:Debug" }
 				links { "SDL2d" }
-			filter { "system:not windows", "configurations:Release" }
+			filter { "system:not windows", "configurations:Release or system:haiku" }
 				links { "SDL3" }
 			filter "system:not windows"
 				links { "SDL3_mixer", "FLAC", "mpg123", "vorbisfile", "vorbis", "ogg" }
@@ -112,15 +106,17 @@ local ygopro_config=function(static_core)
 		if sounds.sfml then
 			defines "YGOPRO_USE_SFML"
 			files "SoundBackends/sfml/**"
-			_includedirs "../sfAudio/include"
+			externalincludedirs "../sfAudio/include"
 			links { "sfAudio" }
 			filter "system:not windows"
-				links { "FLAC", "vorbisfile", "vorbis", "ogg", "openal" }
+				links { "FLAC", "vorbisfile", "vorbis", "ogg" }
 				if _OPTIONS["use-mpg123"] then
 					links { "mpg123" }
 				end
+			filter { "system:not windows", "not system:macosx or ios" }
+				links { "openal" }
 			filter "system:macosx or ios"
-				links { "CoreAudio.framework", "AudioToolbox.framework" }
+				links { "CoreAudio.framework", "AudioToolbox.framework", "OpenAL.framework" }
 			filter "system:macosx"
 				links { "AudioUnit.framework" }
 			filter { "system:windows", "action:not vs*" }
@@ -150,7 +146,7 @@ local ygopro_config=function(static_core)
 	filter "system:windows"
 		kind "ConsoleApp"
 		files "ygopro.rc"
-		_includedirs { "../irrlicht/include" }
+		externalincludedirs { "../irrlicht/include" }
 		dofile("../irrlicht/defines.lua")
 
 	filter { "system:windows", "action:vs*" }
@@ -162,11 +158,18 @@ local ygopro_config=function(static_core)
 	filter { "system:windows", "options:not no-direct3d" }
 		defines "IRR_COMPILE_WITH_DX9_DEV_PACK"
 
-	filter "system:not windows"
+	filter  { "system:not windows", "system:not haiku" }
 		if _OPTIONS["discord"] and not os.istarget("ios") then
 			links "discord-rpc"
 		end
 		links { "sqlite3", "event", "event_pthreads", "dl", "git2", "ssh2" }
+
+	filter "system:haiku"
+		externalincludedirs { "../irrlicht/include" }
+		links { "sqlite3", "event", "event_pthreads", "fmt", "curl", "freetype", "git2", "ssh2", "network" }
+		links { "png", "bz2" }
+		links { "jpeg" , "z" }
+		links { "SDL3" }
 
 	filter { "system:windows", "action:not vs*" }
 		if _OPTIONS["discord"] then
@@ -177,7 +180,7 @@ local ygopro_config=function(static_core)
 	filter "system:macosx or ios"
 		links { "ssl", "crypto" }
 		if os.istarget("macosx") then
-			files { "*.m", "*.mm" }
+			files { "OSX/**", "discord_register_url_osx.m" }
 			links { "ldap", "Cocoa.framework", "IOKit.framework", "OpenGL.framework", "Security.framework", "SystemConfiguration.framework" }
 		else
 			files { "iOS/**" }
@@ -203,6 +206,12 @@ local ygopro_config=function(static_core)
 			["PRODUCT_BUNDLE_IDENTIFIER"] = "io.github.edo9300.ygopro" .. (static_core and "" or "dll")
 		}
 
+	filter { "system:macosx" }
+		files { "Info.plist" }
+		xcodebuildsettings {
+			["PRODUCT_BUNDLE_IDENTIFIER"] = "io.github.edo9300.ygopro" .. (static_core and "" or "dll")
+		}
+
 	filter { "system:linux or windows", "action:not vs*", "configurations:Release" }
 		if _OPTIONS["vcpkg-root"] then
 			links { "png", "bz2" }
@@ -220,33 +229,41 @@ local ygopro_config=function(static_core)
 				local full_vcpkg_root_path=get_vcpkg_root_path(arch)
 				local platform="platforms:" .. arch
 				filter { "system:not windows", platform }
-					_includedirs { full_vcpkg_root_path .. "/include/irrlicht" }
+					externalincludedirs { full_vcpkg_root_path .. "/include/irrlicht" }
 			end
 		else
 			filter { "system:not windows" }
-				_includedirs "/usr/include/irrlicht"
+				externalincludedirs "/usr/include/irrlicht"
 		end
 	end
 
 
 	filter { "system:windows", "action:not vs*" }
 		if _OPTIONS["vcpkg-root"] then
-			links { "ssl", "crypto", "zlib", "jpeg" }
+			links { "ssl", "crypto", "jpeg" }
+			filter { "system:windows", "action:not vs*", "not configurations:Debug" }
+				links { "zlib" }
+			filter { "system:windows", "action:not vs*", "configurations:Debug" }
+				links { "zlibd" }
 		end
 
 	filter "system:not windows"
 		links { "pthread" }
 
 	filter "system:windows"
-		links { "wbemuuid", "opengl32", "ws2_32", "winmm", "gdi32", "kernel32", "user32", "imm32", "wldap32", "crypt32", "advapi32", "rpcrt4", "ole32", "OleAut32", "uuid", "winhttp", "Secur32" }
+		links { "wbemuuid", "opengl32", "ws2_32", "winmm", "gdi32", "kernel32", "user32", "imm32", "wldap32", "crypt32", "advapi32", "rpcrt4", "ole32", "oleaut32", "uuid", "winhttp" }
 		if not _OPTIONS["oldwindows"] then
-			links "Iphlpapi"
+			links "iphlpapi"
+		end
+		if not (_OPTIONS["oldwindows"] and _ACTION == "gmake2") then
+			links "secur32"
 		end
 
-	if static_core then
-		filter {}
-			links "lua"
+	filter {}
+	if _OPTIONS["prebuilt-core"] then
+		libdirs { _OPTIONS["prebuilt-core"] }
 	end
+	links { "ocgcore", "lua" }
 end
 
 include "lzma/."
@@ -257,14 +274,9 @@ end
 if not _OPTIONS["no-core"] then
 	project "ygopro"
 		targetname "ygopro"
-		if _OPTIONS["prebuilt-core"] then
-			libdirs { _OPTIONS["prebuilt-core"] }
-		end
-		links { "ocgcore" }
 		ygopro_config(true)
 end
 
 project "ygoprodll"
 	targetname "ygoprodll"
-	defines "YGOPRO_BUILD_DLL"
 	ygopro_config()

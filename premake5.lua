@@ -1,3 +1,7 @@
+--old premake5 support
+if not externalincludedirs then
+	externalincludedirs = sysincludedirs
+end
 newoption {
 	trigger	= "no-direct3d",
 	description = "Disable DirectX options in irrlicht if the DirectX SDK isn't installed"
@@ -47,6 +51,11 @@ newoption {
 	description = "Path to vcpkg installation"
 }
 newoption {
+	trigger = "vcpkg-triplet",
+	value = "triplet",
+	description = "Base vcpkg triplet to use, example: \"-mingw-static\""
+}
+newoption {
 	trigger = "discord",
 	value = "app_id_token",
 	description = "Discord App ID for rich presence"
@@ -83,7 +92,7 @@ local function valid_arch(arch)
 end
 
 local function valid_sound(sound)
-	return sound == "irrklang" or sound == "sdl-mixer" or sound == "sfml" or sound == "miniaudio"
+	return sound == "irrklang" or sound == "sdl-mixer" or sound == "sdl3-mixer" or sound == "sfml" or sound == "miniaudio"
 end
 
 local absolute_vcpkg_path =(function()
@@ -98,7 +107,9 @@ end
 
 function get_vcpkg_root_path(arch)
 	local function vcpkg_triplet_path()
-		if os.istarget("linux") then
+		if _OPTIONS["vcpkg-triplet"] then
+			return _OPTIONS["vcpkg-triplet"]
+		elseif os.istarget("linux") then
 			return "-linux"
 		elseif os.istarget("macosx") then
 			return "-osx"
@@ -139,10 +150,6 @@ if _OPTIONS["sound"] then
 	end
 end
 
-local _includedirs=includedirs
-if _ACTION=="xcode4" then
-	_includedirs=sysincludedirs
-end
 workspace "ygo"
 	location "build"
 	language "C++"
@@ -204,6 +211,9 @@ workspace "ygo"
 
 	if _OPTIONS["oldwindows"] then
 		filter { "action:vs*" }
+			if _ACTION >= "vs2019" then
+				externalincludedirs = includedirs
+			end
 			toolset "v141_xp"
 		filter {}
 	else
@@ -218,7 +228,7 @@ workspace "ygo"
 			print(full_vcpkg_root_path)
 			local platform="platforms:" .. (arch=="x86" and os.istarget("windows") and "Win32" or arch)
 			filter { "action:not vs*", platform }
-				_includedirs { full_vcpkg_root_path .. "/include" }
+				externalincludedirs { full_vcpkg_root_path .. "/include" }
 
 			filter { "action:not vs*", "configurations:Debug", platform }
 				libdirs { full_vcpkg_root_path .. "/debug/lib" }
@@ -228,8 +238,11 @@ workspace "ygo"
 		end
 	end
 
+	filter "system:haiku"
+		externalincludedirs { "/boot/system/develop/headers/freetype2" }
+
 	filter "system:macosx"
-		_includedirs { "/usr/local/include" }
+		externalincludedirs { "/usr/local/include" }
 		libdirs { "/usr/local/lib" }
 		--systemversion "10.10"
 
@@ -252,10 +265,6 @@ workspace "ygo"
 		buildoptions { "-static-libgcc", "-static-libstdc++", "-static", "-lpthread" }
 		linkoptions { "-mthreads", "-municode", "-static-libgcc", "-static-libstdc++", "-static", "-lpthread" }
 		defines { "UNICODE", "_UNICODE" }
-
-	filter { "action:not vs*", "system:windows", "configurations:Release" }
-		buildoptions { "-s" }
-		linkoptions { "-s" }
 
 	filter "configurations:Debug"
 		symbols "On"
@@ -312,7 +321,7 @@ workspace "ygo"
 		linkoptions { "-static-libgcc", "-static-libstdc++" }
 
 	subproject = true
-	if not _OPTIONS["prebuilt-core"] and not _OPTIONS["no-core"] then
+	if not _OPTIONS["prebuilt-core"] then
 		include "ocgcore"
 	end
 	if _OPTIONS["bundled-font"] then
@@ -320,7 +329,7 @@ workspace "ygo"
 		bin2c(_OPTIONS["bundled-font"], "gframe/CGUITTFont/bundled_font.cpp")
 	end
 	include "gframe"
-	if os.istarget("windows") then
+	if os.istarget("windows") or os.istarget("haiku") then
 		include "irrlicht"
 	end
 	if os.istarget("macosx") and _OPTIONS["discord"] then
@@ -351,3 +360,14 @@ premake.override(premake.vstudio.vc2010.elements, "globals", function(base, prj)
 	table.insertafter(calls, premake.vstudio.vc2010.globals, vcpkgStaticTriplet202006)
 	return calls
 end)
+
+-- workaround for https://github.com/premake/premake-core/issues/2466
+if os.istarget("windows") then
+	premake.override(premake.tools.gcc.libraryDirectories.architecture, "x86", function(base, prj)
+		return {}
+	end)
+
+	premake.override(premake.tools.gcc.libraryDirectories.architecture, "x86_64", function(base, prj)
+		return {}
+	end)
+end
