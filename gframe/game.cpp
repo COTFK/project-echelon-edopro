@@ -2134,17 +2134,6 @@ bool Game::MainLoop() {
 			driver->removeTexture(capture_target);
 			capture_target = nullptr;
 		}
-#ifdef YGOPRO_BUILD_DLL
-		if(coreJustLoaded && false) {
-			if(stMessage->getText() == gDataManager->GetSysString(1430))
-				HideElement(wMessage);
-			RefreshUICoreVersion();
-			env->setFocus(stACMessage);
-			stACMessage->setText(epro::format(gDataManager->GetSysString(1431), corename).data());
-			PopupElement(wACMessage, 30);
-			coreJustLoaded = false;
-		}
-#endif //YGOPRO_BUILD_DLL
 		frame_counter += (float)delta_time * 60.0f/1000.0f;
 		float remainder;
 		frame_counter = std::modf(frame_counter, &remainder);
@@ -3974,7 +3963,7 @@ void Game::LaunchHost(std::string config_raw) {
 	stHostNotes->setVisible(false);
 	ebHostNotes->setVisible(true);
 	wCreateHost->setVisible(true);
-	GUIUtils::ClickButton(device, btnHostConfirm);
+	GUIUtils::ClickButton(device.get(), btnHostConfirm);
 }
 
 void Game::LaunchJoin(std::string config_raw) {
