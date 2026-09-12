@@ -240,13 +240,6 @@ int ReplayMode::ReplayThread() {
 	mainGame->dInfo.checkRematch = false;
 	mainGame->SetMessageWindow();
 
-	// If the server requested a swapped replay view, apply it now.
-	{
-		const char* _swap_env = std::getenv("EDOPRO_REPLAY_SWAP");
-		if(_swap_env && _swap_env[0] && (_swap_env[0] == '1' || _swap_env[0] == 't' || _swap_env[0] == 'T')) {
-			mainGame->dField.ReplaySwap();
-		}
-	}
 	mainGame->dInfo.turn = 0;
 	mainGame->dInfo.isCatchingUp = (skip_turn > 0);
 	is_continuing = true;
@@ -448,6 +441,13 @@ bool ReplayMode::ReplayAnalyze(const CoreUtils::Packet& p) {
 			return true;
 		}
 		DuelClient::ClientAnalyze(p);
+		if(!mainGame->dInfo.isOldReplay && p.message == MSG_START) {
+			const char* _swap_env = std::getenv("EDOPRO_REPLAY_SWAP");
+			if(_swap_env && _swap_env[0] && (_swap_env[0] == '1' || _swap_env[0] == 't' || _swap_env[0] == 'T')) {
+				std::lock_guard<epro::mutex> lock(mainGame->gMutex);
+				mainGame->dField.ReplaySwap();
+			}
+		}
 		if(pauseable) {
 			current_step++;
 			if(skip_step) {
