@@ -3463,6 +3463,10 @@ bool Game::HasFocus(irr::gui::EGUI_ELEMENT_TYPE type) const {
 	return focus && focus->hasType(type);
 }
 void Game::RefreshUICoreVersion() {
+	if(!ocgcore) {
+		stCoreVersion->setText(L"");
+		return;
+	}
 	auto label = corename.length()
 		? epro::format(gDataManager->GetSysString(2013), ocgcore->ver_major, ocgcore->ver_minor, corename)
 		: epro::format(gDataManager->GetSysString(2010), ocgcore->ver_major, ocgcore->ver_minor);
